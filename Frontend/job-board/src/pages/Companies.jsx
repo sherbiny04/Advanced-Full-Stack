@@ -36,6 +36,7 @@ const Companies = () => {
     ? 'bg-gradient-to-br from-[#101C3D] via-[#131A3A] to-[#05090F]'
     : 'bg-gradient-to-br from-wazafny-blue via-indigo-600 to-purple-700';
 
+  const heroDescriptionClasses = isDarkMode ? 'text-blue-100/80' : 'text-slate-600';
   const stats = [
     { value: '2.1K', label: 'active partners' },
     { value: '64%', label: 'series B & beyond' },
@@ -61,7 +62,7 @@ const Companies = () => {
               <h1 className="text-4xl md:text-5xl font-black leading-tight mb-6">
                 Meet the brands shaping tomorrow’s talent experience.
               </h1>
-              <p className="text-lg text-blue-100/80 max-w-2xl mb-10">
+              <p className={`text-lg max-w-2xl mb-10 ${heroDescriptionClasses}`}>
                 From stealth startups to Fortune 500 innovators, Wazafny partners showcase transparent culture, growth tracks and bold missions.
               </p>
               <div className="flex flex-wrap gap-5">

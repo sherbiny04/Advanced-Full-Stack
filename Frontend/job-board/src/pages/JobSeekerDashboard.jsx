@@ -109,6 +109,7 @@ const JobSeekerDashboard = () => {
   const chartSurfaceClass = isDarkMode
     ? 'bg-gradient-to-br from-[#1b1533] via-[#111325] to-[#090d19]'
     : 'bg-gradient-to-br from-white to-gray-50';
+  const chartHeadingClass = isDarkMode ? 'text-white' : 'text-gray-900';
 
   const mutedTextClass = isDarkMode ? 'text-slate-400' : 'text-gray-500';
   const softerTextClass = isDarkMode ? 'text-slate-300' : 'text-gray-600';
@@ -920,7 +921,7 @@ const JobSeekerDashboard = () => {
               {/* Salary Trend Chart */}
               <div className={`${chartSurfaceClass} rounded-2xl p-5 shadow-lg hover:shadow-2xl transition-shadow duration-300 border border-white/5`}>
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-bold flex items-center gap-2 text-white">
+                  <h3 className={`text-sm font-bold flex items-center gap-2 ${chartHeadingClass}`}>
                     <span className="w-2 h-2 rounded-full bg-gradient-to-r from-orange-400 to-pink-500"></span>
                     Salary Trend
                   </h3>
@@ -1035,7 +1036,7 @@ const JobSeekerDashboard = () => {
               {/* Profile Views Chart */}
               <div className={`${chartSurfaceClass} rounded-2xl p-5 shadow-lg hover:shadow-2xl transition-shadow duration-300 border border-white/5`}>
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-bold flex items-center gap-2 text-white">
+                  <h3 className={`text-sm font-bold flex items-center gap-2 ${chartHeadingClass}`}>
                     <span className="w-2 h-2 rounded-full bg-gradient-to-r from-pink-400 to-rose-500"></span>
                     Profile Views
                   </h3>
@@ -1075,7 +1076,7 @@ const JobSeekerDashboard = () => {
               {/* Application Status Chart - Third Container */}
               <div className={`${chartSurfaceClass} rounded-2xl p-5 shadow-lg hover:shadow-2xl transition-shadow duration-300 border border-white/5`}>
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-bold flex items-center gap-2 text-white">
+                  <h3 className={`text-sm font-bold flex items-center gap-2 ${chartHeadingClass}`}>
                     <span className="w-2 h-2 rounded-full bg-gradient-to-r from-purple-400 to-pink-500"></span>
                     Salary Trend
                   </h3>
