@@ -2,1788 +2,1347 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useJobs } from '../context/JobContext';
+import { companiesAPI } from '../services/api';
 import ApplicationForm from '../components/ApplicationForm';
 import EasyApplyForm from '../components/EasyApplyForm';
+import { useTheme } from '../hooks/useTheme';
 
 const JobSeekerDashboard = () => {
   const navigate = useNavigate();
-  const { user, isSeeker, updateUser } = useAuth();
-  const { getApplicationsBySeekerId, getJobById, filteredJobs, applyForJob } = useJobs();
-  const [applications, setApplications] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [view, setView] = useState('browse'); // 'profile' or 'browse'
+  const { user, isSeeker } = useAuth();
+  const { filteredJobs, applyForJob } = useJobs();
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedJobType, setSelectedJobType] = useState('All');
+  const [companies, setCompanies] = useState([]);
   const [selectedJob, setSelectedJob] = useState(null);
-  const [editMode, setEditMode] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [imageLoading, setImageLoading] = useState(false);
-  
-  // Profile data state
-  const [profileData, setProfileData] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-    address: '',
-    linkedIn: '',
-    location: '',
-    dateOfBirth: '',
-    age: '',
-    jobTitle: '',
-    experience: '',
-    profileImage: '',
-    coverLetter: '',
-    recentExperience: {
-      position: '',
-      company: '',
-      duration: ''
-    },
-    education: {
-      degree: '',
-      institution: '',
-      year: ''
-    },
-    skills: [],
-    city: '',
-    country: ''
-  });
-
-  // Application form state - replaced with new multi-step form
   const [showApplicationForm, setShowApplicationForm] = useState(false);
-  
-  // Easy Apply form state (simple form)
   const [showEasyApplyForm, setShowEasyApplyForm] = useState(false);
-  
-  // Keep old state for compatibility with existing modal
-  const [applicationForm, setApplicationForm] = useState({
-    whyInterested: '',
-    goodFit: '',
-    expectedSalary: '',
-    availability: 'Immediately'
-  });
-  
-  // Filter states for browse view
-  const [filters, setFilters] = useState({
-    keywords: '',
-    location: '',
-    salaryRange: 35000,
-    distance: 35
-  });
+  const [activeView, setActiveView] = useState('profile'); // 'browse' or 'profile'
+  const [showJobSearch, setShowJobSearch] = useState(false); // Show job search within dashboard
+  const [selectedJobForDetails, setSelectedJobForDetails] = useState(null); // Selected job in browse view
+  const [activeTab, setActiveTab] = useState('details'); // 'details' or 'company'
+  const { isDarkMode, setTheme } = useTheme();
 
-  const [newSkill, setNewSkill] = useState('');
+  const categories = ['All', 'Designer', 'Web Developer', 'Software Engineer', 'Doctors', 'Marketing'];
+  const jobTypes = ['All', 'Full Time', 'Part Time', 'Remote', 'Hybrid'];
 
   useEffect(() => {
     if (!isSeeker()) {
       navigate('/login');
       return;
     }
-    loadApplications();
-    initializeProfileData();
+    fetchCompanies();
   }, [user]);
 
-  const initializeProfileData = () => {
-    if (user) {
-      setProfileData({
-        firstName: user.firstName || '',
-        lastName: user.lastName || '',
-        email: user.email || '',
-        phone: user.phone || '',
-        address: user.address || '',
-        linkedIn: user.linkedIn || '',
-        location: user.location || (user.city && user.country ? `${user.city}, ${user.country}` : ''),
-        dateOfBirth: user.dateOfBirth || '',
-        age: user.age || '',
-        jobTitle: user.jobTitle || '',
-        experience: user.experience || '',
-        profileImage: user.profileImage || '',
-        coverLetter: user.coverLetter || '',
-        recentExperience: user.recentExperience || {
-          position: '',
-          company: '',
-          duration: ''
-        },
-        education: user.education || {
-          degree: '',
-          institution: '',
-          year: ''
-        },
-        skills: user.skills || [],
-        city: user.city || '',
-        country: user.country || ''
+
+  const fetchCompanies = async () => {
+    try {
+      const data = await companiesAPI.getAll();
+      setCompanies(data);
+    } catch (error) {
+      console.error('Error fetching companies:', error);
+    }
+  };
+
+  const handleApplyClick = (job) => {
+    setSelectedJob(job);
+    // Show the multi-step application form
+    setShowApplicationForm(true);
+  };
+
+  const handleApplicationSubmit = async (applicationData) => {
+    try {
+      await applyForJob(selectedJob.id, {
+        seekerId: user.id,
+        jobId: selectedJob.id,
+        ...applicationData,
+        status: 'pending',
+        appliedAt: new Date().toISOString()
       });
-    }
-  };
-
-  const loadApplications = async () => {
-    setLoading(true);
-    if (user?.id) {
-      const apps = await getApplicationsBySeekerId(user.id);
-      const appsWithJobs = await Promise.all(
-        apps.map(async (app) => {
-          const job = await getJobById(app.jobId);
-          return { ...app, job };
-        })
-      );
-      setApplications(appsWithJobs);
-    }
-    setLoading(false);
-  };
-
-  const handleProfileUpdate = (field, value) => {
-    setProfileData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
-
-  const handleNestedUpdate = (parent, field, value) => {
-    setProfileData(prev => ({
-      ...prev,
-      [parent]: {
-        ...prev[parent],
-        [field]: value
-      }
-    }));
-  };
-
-  const handleSkillAdd = () => {
-    if (newSkill && !profileData.skills.includes(newSkill)) {
-      setProfileData(prev => ({
-        ...prev,
-        skills: [...prev.skills, newSkill]
-      }));
-      setNewSkill('');
-    }
-  };
-
-  const handleSkillRemove = (skillToRemove) => {
-    setProfileData(prev => ({
-      ...prev,
-      skills: prev.skills.filter(skill => skill !== skillToRemove)
-    }));
-  };
-
-  const handleSaveProfile = async () => {
-    setSaving(true);
-    const result = await updateUser(user.id, profileData);
-    setSaving(false);
-    
-    if (result.success) {
-      setEditMode(false);
-      alert('Profile updated successfully!');
-    } else {
-      alert('Failed to update profile: ' + result.error);
-    }
-  };
-
-  const handleCancelEdit = () => {
-    setEditMode(false);
-    initializeProfileData();
-  };
-
-  // Image upload handler (reads file as data URL and stores in profileData)
-  const handleImageChange = (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    
-    // Validate file size (5MB max)
-    const maxSize = 5 * 1024 * 1024; // 5MB in bytes
-    if (file.size > maxSize) {
-      alert('Image file size must be less than 5MB');
-      e.target.value = ''; // Reset input
-      return;
-    }
-    
-    // Validate file type
-    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-    if (!validTypes.includes(file.type)) {
-      alert('Please select a valid image file (JPEG, PNG, GIF, or WebP)');
-      e.target.value = ''; // Reset input
-      return;
-    }
-    
-    setImageLoading(true);
-    
-    // Create immediate preview URL for instant feedback
-    const previewUrl = URL.createObjectURL(file);
-    handleProfileUpdate('profileImage', previewUrl);
-    
-    // Also process the file for data URL (for persistence)
-    const reader = new FileReader();
-    reader.onload = () => {
-      // Replace the object URL with data URL for proper storage
-      handleProfileUpdate('profileImage', reader.result);
-      // Clean up the object URL to prevent memory leaks
-      URL.revokeObjectURL(previewUrl);
-      setImageLoading(false);
-    };
-    reader.onerror = () => {
-      alert('Error reading the image file. Please try again.');
-      // Revert to previous image on error
-      handleProfileUpdate('profileImage', profileData.profileImage || '');
-      URL.revokeObjectURL(previewUrl);
-      setImageLoading(false);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleRemoveProfileImage = () => {
-    handleProfileUpdate('profileImage', '');
-  };
-
-
-
-  const calculateProfileCompletion = () => {
-    const fields = [
-      profileData.firstName,
-      profileData.lastName,
-      profileData.email,
-      profileData.phone,
-      profileData.address,
-      profileData.location,
-      profileData.dateOfBirth,
-      profileData.jobTitle,
-      profileData.coverLetter,
-      profileData.recentExperience.position,
-      profileData.education.degree,
-      profileData.skills.length > 0
-    ];
-    const completed = fields.filter(field => field).length;
-    return Math.round((completed / fields.length) * 100);
-  };
-
-  const handleApplicationSubmit = async (formData) => {
-    const applicationData = {
-      jobId: selectedJob.id,
-      seekerId: user.id,
-      status: 'pending',
-      appliedDate: new Date().toISOString(),
-      // New application data structure
-      fullName: formData.fullName,
-      email: formData.email,
-      phone: formData.phone,
-      yearsOfExperience: formData.yearsOfExperience,
-      relevantSkills: formData.relevantSkills,
-      keyAchievements: formData.keyAchievements,
-      motivationLetter: formData.motivationLetter,
-      availability: formData.availability,
-      noticePeriod: formData.noticePeriod,
-      seekerName: user.name,
-      seekerEmail: user.email
-    };
-
-    const result = await applyForJob(applicationData);
-    
-    if (result.success) {
-      alert('Application submitted successfully!');
+      
       setShowApplicationForm(false);
-      setSelectedJob(null);
-      loadApplications();
-    } else {
-      alert('Failed to submit application: ' + result.error);
-    }
-  };
-
-  const handleEasyApplySubmit = async (formData) => {
-    const applicationData = {
-      jobId: selectedJob.id,
-      seekerId: user.id,
-      status: 'pending',
-      appliedDate: new Date().toISOString(),
-      applicationType: 'easy_apply',
-      // Easy apply data structure
-      firstName: formData.firstName,
-      profession: formData.profession,
-      email: formData.email,
-      phone: formData.phone,
-      cv: formData.cv ? formData.cv.name : null,
-      seekerName: user.name,
-      seekerEmail: user.email
-    };
-
-    const result = await applyForJob(applicationData);
-    
-    if (result.success) {
-      alert('Easy application submitted successfully!');
       setShowEasyApplyForm(false);
       setSelectedJob(null);
-      loadApplications();
-    } else {
-      alert('Failed to submit easy application: ' + result.error);
+      
+      alert('Application submitted successfully!');
+    } catch (error) {
+      console.error('Error submitting application:', error);
+      alert('Failed to submit application. Please try again.');
     }
+  };
+
+  const handleCancelApplication = () => {
+    setShowApplicationForm(false);
+    setShowEasyApplyForm(false);
+    setSelectedJob(null);
   };
 
   const filteredJobsList = filteredJobs.filter(job => {
-    const matchesKeywords = !filters.keywords || 
-      job.title.toLowerCase().includes(filters.keywords.toLowerCase()) ||
-      job.company.toLowerCase().includes(filters.keywords.toLowerCase()) ||
-      job.description.toLowerCase().includes(filters.keywords.toLowerCase());
+    const matchesCategory = selectedCategory === 'All' || 
+      job.title.toLowerCase().includes(selectedCategory.toLowerCase());
+    const matchesSearch = !searchTerm || 
+      job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      job.company.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesType = selectedJobType === 'All' || 
+      job.type.toLowerCase().includes(selectedJobType.toLowerCase());
     
-    const matchesLocation = !filters.location || 
-      job.location.toLowerCase().includes(filters.location.toLowerCase());
-    
-    // Extract salary number from job.salary string (e.g., "$120,000 - $180,000")
-    const matchesSalary = !job.salary || (() => {
-      const salaryNumbers = job.salary.match(/\d+,?\d*/g);
-      if (!salaryNumbers || salaryNumbers.length === 0) return true;
-      const minSalary = parseInt(salaryNumbers[0].replace(/,/g, ''));
-      return minSalary >= filters.salaryRange;
-    })();
-    
-    return matchesKeywords && matchesLocation && matchesSalary;
+    return matchesCategory && matchesSearch && matchesType;
   });
 
+  const themeClasses = {
+    pageBg: isDarkMode ? 'bg-slate-950 text-gray-100' : 'bg-gray-50 text-gray-900',
+    sidebarBg: isDarkMode ? 'bg-slate-900/80 border-r border-white/10 text-gray-100' : 'bg-white border-r border-gray-100 text-gray-900',
+    navText: isDarkMode ? 'text-gray-300 hover:bg-slate-900/40' : 'text-gray-600 hover:bg-gray-50',
+    mutedText: isDarkMode ? 'text-gray-400' : 'text-gray-600',
+    divider: isDarkMode ? 'border-white/10' : 'border-gray-200'
+  };
+
+  const panelClass = isDarkMode
+    ? 'bg-[#0f172a]/90 border border-white/10 shadow-[0_30px_80px_rgba(2,6,23,0.7)] text-white'
+    : 'bg-white border border-gray-100 shadow-lg text-gray-900';
+
+  const softPanelClass = isDarkMode
+    ? 'bg-[#1a2140]/80 border border-white/5 text-white'
+    : 'bg-gray-50 border border-gray-100 text-gray-900';
+
+  const chartSurfaceClass = isDarkMode
+    ? 'bg-gradient-to-br from-[#1b1533] via-[#111325] to-[#090d19]'
+    : 'bg-gradient-to-br from-white to-gray-50';
+
+  const mutedTextClass = isDarkMode ? 'text-slate-400' : 'text-gray-500';
+  const softerTextClass = isDarkMode ? 'text-slate-300' : 'text-gray-600';
+  const mobileNavClasses = isDarkMode
+    ? 'bg-slate-950/85 text-white border-white/10'
+    : 'bg-white/85 text-gray-900 border-gray-200';
+  const mobileButtonNeutral = isDarkMode
+    ? 'bg-transparent border-white/30 text-white'
+    : 'bg-transparent border-gray-300 text-gray-900';
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-100">
-      {/* View Toggle */}
-      <div className="bg-white/50 backdrop-blur-lg shadow-md border-b border-purple-200/50">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex justify-center">
-            <div className="flex gap-4 bg-gray-100 rounded-full p-2">
-              <button
-                onClick={() => setView('profile')}
-                className={`px-6 py-2 rounded-full font-semibold transition-all duration-300 ${
-                  view === 'profile'
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'text-blue-600 hover:bg-blue-600 hover:text-white'
+    <>
+      <div
+        data-theme={isDarkMode ? 'dark' : 'light'}
+        className={`dashboard-root min-h-screen flex flex-col lg:flex-row transition-colors duration-500 ${themeClasses.pageBg}`}
+      >
+      {/* Left Sidebar - Only show in profile view */}
+      {activeView === 'profile' && (
+        <div className={`hidden lg:flex lg:flex-col w-64 fixed h-full shadow-lg transition-colors duration-500 ${themeClasses.sidebarBg}`}>
+          <div className="p-6">
+            {/* User Profile Section */}
+            <div className={`flex items-center gap-3 mb-8 pb-6 border-b ${themeClasses.divider}`}>
+              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-wazafny-blue to-purple-600 flex items-center justify-center text-white font-bold text-lg">
+                {user?.firstName?.charAt(0) || 'U'}
+              </div>
+              <div>
+                <p className="font-bold text-lg">{user?.firstName || 'User'} {user?.lastName || ''}</p>
+                <p className={`text-xs ${themeClasses.mutedText}`}>{user?.jobTitle || 'Software Engineer'}</p>
+              </div>
+            </div>
+
+            <nav className="space-y-2">
+              <button 
+                onClick={() => {
+                  setActiveView('profile');
+                  setShowJobSearch(false);
+                }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${
+                  !showJobSearch 
+                    ? 'bg-gradient-to-r from-wazafny-blue to-purple-600 text-white shadow-lg' 
+                    : 'text-gray-600 hover:bg-gray-50'
                 }`}
               >
-                Profile Dashboard
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                </svg>
+                Dashboard
               </button>
-              <button
-                onClick={() => setView('browse')}
-                className={`px-6 py-2 rounded-full font-semibold transition-all duration-300 ${
-                  view === 'browse'
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'text-blue-600 hover:bg-blue-600 hover:text-white'
+              <button className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${themeClasses.navText}`}>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                My Application
+              </button>
+              <button className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${themeClasses.navText}`}>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Schedule
+              </button>
+              <button 
+                onClick={() => setShowJobSearch(true)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${
+                  showJobSearch 
+                    ? 'bg-gradient-to-r from-wazafny-blue to-purple-600 text-white shadow-lg' 
+                    : themeClasses.navText
                 }`}
               >
-                Browse Jobs
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                Job Search
               </button>
+              <button className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${themeClasses.navText}`}>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+                Explore Companies
+              </button>
+              <button className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium ${themeClasses.navText}`}>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                </svg>
+                Messages
+              </button>
+            </nav>
+
+            {/* Theme Toggle */}
+            <div className={`mt-6 flex items-center gap-2 rounded-xl p-1 transition-colors duration-300 ${isDarkMode ? 'bg-slate-900/40' : 'bg-gray-100'}`}>
+              <button
+                onClick={() => setTheme(false)}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${
+                  !isDarkMode
+                    ? 'bg-white text-gray-900 shadow-lg'
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+                <span>Light</span>
+              </button>
+              <button
+                onClick={() => setTheme(true)}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${
+                  isDarkMode
+                    ? 'bg-slate-900 text-white shadow-inner shadow-black/40'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                </svg>
+                <span>Dark</span>
+              </button>
+            </div>
+
+            {/* Bottom Section */}
+            <div className="absolute bottom-8 left-6 right-6">
+              {/* Settings Links */}
+              <div className="space-y-2">
+                <button className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition ${themeClasses.navText}`}>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                  Get Help
+                </button>
+                <button className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition ${themeClasses.navText}`}>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                  </svg>
+                  English
+                </button>
+                <button 
+                  onClick={() => {
+                    // Add logout logic
+                    navigate('/');
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition ${themeClasses.navText}`}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                  Logout
+                </button>
+              </div>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Mobile controls */}
+      <div className={`lg:hidden w-full border-b ${mobileNavClasses} backdrop-blur-xl sticky top-0 z-30`}>        
+        <div className="max-w-5xl mx-auto flex flex-wrap gap-3 items-center justify-between">
+          <button
+            onClick={() => {
+              setActiveView('profile');
+              setShowJobSearch(false);
+            }}
+            className={`flex-1 min-w-[140px] px-4 py-2 text-sm font-semibold rounded-xl border transition-all ${
+              !showJobSearch && activeView === 'profile'
+                ? 'bg-gradient-to-r from-wazafny-blue to-purple-600 text-white border-transparent shadow-lg'
+                : mobileButtonNeutral
+            }`}
+          >
+            Dashboard
+          </button>
+          <button
+            onClick={() => {
+              setActiveView('profile');
+              setShowJobSearch(true);
+            }}
+            className={`flex-1 min-w-[140px] px-4 py-2 text-sm font-semibold rounded-xl border transition-all ${
+              showJobSearch && activeView === 'profile'
+                ? 'bg-gradient-to-r from-wazafny-blue to-purple-600 text-white border-transparent shadow-lg'
+                : mobileButtonNeutral
+            }`}
+          >
+            Job Search
+          </button>
+        </div>
       </div>
 
-      {view === 'browse' ? (
-  /* BROWSE JOBS VIEW - Enhanced Modern Design */
-  <div className="w-full px-4 py-4 bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/40 min-h-screen">
-          <div className="flex gap-4 h-[calc(100vh-120px)]">
-            
-            {/* Left Sidebar - Profile & Filters (~20%) */}
-            <div className="w-64 flex-shrink-0 sticky top-4 h-full transform transition-all duration-300 ease-in-out">
-              <div className="bg-white/40 backdrop-blur-lg rounded-xl shadow-xl border border-purple-200/40 p-4 overflow-y-auto pb-4 h-full hover:shadow-2xl hover:bg-white/60 transition-all duration-300">
-                
-                {/* Profile Section - Enhanced Design */}
-                <div className="flex items-center gap-3 mb-6 p-3 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg text-white transform hover:scale-105 transition-all duration-300 cursor-pointer" onClick={() => setView('profile')}>
-                  {profileData.profileImage ? (
-                    <img
-                      src={profileData.profileImage}
-                      alt={user?.name}
-                      className="w-12 h-12 rounded-full object-cover border-2 border-white/30 shadow-md"
-                    />
-                  ) : (
-                    <div className="w-12 h-12 rounded-full bg-white/20 border-2 border-white/30 flex items-center justify-center shadow-md">
-                      <svg className="w-6 h-6 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                      </svg>
+      {/* Main Content */}
+      <div className={`flex-1 w-full ${activeView === 'profile' ? 'lg:ml-64' : ''}`}>
+        <div className="max-w-7xl mx-auto px-4 py-8">
+          
+          {/* View Toggle Navigation - only show when not in sidebar view */}
+          {activeView === 'browse' && (
+            <div className="mb-8">
+              <div className="flex items-center gap-4 mb-6">
+                <button
+                  onClick={() => setActiveView('browse')}
+                  className="px-6 py-3 rounded-lg font-semibold bg-gradient-to-r from-wazafny-blue to-purple-600 text-white shadow-lg"
+                >
+                  Browse Jobs
+                </button>
+                <button
+                  onClick={() => setActiveView('profile')}
+                  className="px-6 py-3 rounded-lg font-semibold bg-white text-gray-600 hover:bg-gray-50"
+                >
+                  My Dashboard
+                </button>
+              </div>
+            </div>
+          )}
+
+        {/* Browse Jobs View */}
+        {activeView === 'browse' && (
+          <>
+            {/* Header Section */}
+            <div className="mb-8">
+              <h1 className="text-4xl font-bold text-gray-900 mb-2">Featured Job Circulars</h1>
+              <p className="text-gray-600">Discover your next career opportunity</p>
+            </div>
+
+        {/* Search and Filter Section */}
+        <div className="bg-white rounded-2xl shadow-sm p-6 mb-8">
+          <div className="flex flex-col md:flex-row gap-4 items-center">
+            {/* Search Input */}
+            <div className="flex-1 relative">
+              <input
+                type="text"
+                placeholder="etc Search Your Needs"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full px-4 py-3 pr-12 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-wazafny-blue/20 focus:border-wazafny-blue"
+              />
+              <button className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-gradient-to-r from-wazafny-blue to-purple-600 rounded-lg flex items-center justify-center hover:from-blue-700 hover:to-purple-700 transition-colors">
+                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Job Type Dropdown */}
+            <div className="relative min-w-[200px]">
+              <select
+                value={selectedJobType}
+                onChange={(e) => setSelectedJobType(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-wazafny-blue/20 focus:border-wazafny-blue appearance-none bg-white cursor-pointer"
+              >
+                <option value="All">All Job Types</option>
+                <option value="Full Time">Full Time</option>
+                <option value="Part Time">Part Time</option>
+                <option value="Remote">Remote</option>
+                <option value="Hybrid">Hybrid</option>
+              </select>
+              <svg className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+
+          {/* Category Pills */}
+          <div className="flex items-center gap-2 mt-4 flex-wrap">
+            <span className="text-sm text-gray-600 font-medium">Popular Categories:</span>
+            {categories.map((category) => (
+              <button
+                key={category}
+                onClick={() => setSelectedCategory(category)}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                  selectedCategory === category
+                    ? 'bg-wazafny-blue text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {category}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Job Listings Grid */}
+          <div className="lg:col-span-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredJobsList.map((job) => (
+                <div
+                  key={job.id}
+                  className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer border border-gray-100 hover:border-wazafny-blue/30"
+                >
+                  {/* Job Card Header */}
+                  <div className="flex items-start gap-3 mb-4">
+                    {/* Company Logo */}
+                    <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-gray-50 flex items-center justify-center">
+                      {job.companyLogo ? (
+                        <img
+                          src={job.companyLogo}
+                          alt={job.company}
+                          className="w-full h-full object-contain"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-wazafny-blue to-purple-600 flex items-center justify-center text-white font-bold text-lg">
+                          {job.company.charAt(0)}
+                        </div>
+                      )}
                     </div>
-                  )}
-                  <div className="flex-1">
-                    <h3 className="font-bold text-white text-sm mb-1">
-                      {profileData.firstName && profileData.lastName 
-                        ? `${profileData.firstName} ${profileData.lastName}`
-                        : user?.name || 'Complete your profile'}
-                    </h3>
-                    <p className="text-white/80 text-xs flex items-center gap-1">
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                      View Profile
-                    </p>
+
+                    {/* Job Title and Company */}
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-bold text-gray-900 mb-1 truncate">{job.title}</h3>
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                        </svg>
+                        <span className="truncate">{job.company}</span>
+                      </div>
+                    </div>
                   </div>
+
+                  {/* Job Meta Info */}
+                  <div className="space-y-2 mb-4">
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>Posted 05 Hours Ago</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                      <span>{job.type}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      </svg>
+                      <span>{job.location}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <svg className="w-4 h-4 text-wazafny-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                      </svg>
+                      <span className="font-bold text-wazafny-blue">{job.salary || '$45k-$55k'}</span>
+                    </div>
+                  </div>
+
+                  {/* Apply Button */}
+                  <button 
+                    onClick={() => handleApplyClick(job)}
+                    className="w-full py-2.5 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-800 transition-colors"
+                  >
+                    Apply Now
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Load More Button */}
+            <div className="mt-8 text-center">
+              <button className="w-full py-4 bg-gradient-to-r from-wazafny-blue to-purple-600 text-white rounded-xl font-bold hover:from-blue-700 hover:to-purple-700 transition-all shadow-sm">
+                Load More
+              </button>
+            </div>
+          </div>
+
+          {/* Right Sidebar */}
+          <div className="lg:col-span-1 space-y-6">
+            {/* Call to Action Card */}
+            <div className={`${isDarkMode ? 'bg-gradient-to-br from-[#101424] via-[#161930] to-[#101424] text-white border border-white/10 shadow-[0_30px_80px_rgba(2,6,23,0.7)]' : 'bg-gradient-to-br from-gray-900 to-gray-800 text-white'} rounded-2xl p-8`}>
+              <h3 className="text-2xl font-bold mb-3 leading-snug">Your Next Great Hire is Just a Click Away!</h3>
+              <p className={`text-sm mb-6 ${isDarkMode ? 'text-gray-300' : 'text-gray-200'}`}>
+                Post your job today and quickly connect with top talent. Our user-friendly platform streamlines hiring, making it easy to find skilled professionals ready to join.
+              </p>
+              <button className="w-full py-3 bg-gradient-to-r from-wazafny-blue to-purple-600 text-white rounded-lg font-bold hover:from-blue-700 hover:to-purple-700 transition-all shadow-lg">
+                Post Job On Wazafny
+              </button>
+            </div>
+
+            {/* Featured Company Section */}
+            <div className={`${panelClass} rounded-2xl p-6 shadow-lg`}>
+              <h3 className="text-xl font-bold mb-6">Featured Company</h3>
+              <div className="space-y-4">
+                {companies.length > 0 ? companies.slice(0, 5).map((company) => (
+                  <div 
+                    key={company.id} 
+                    onClick={() => navigate(`/company/${company.id}`)}
+                    className={`${softPanelClass} flex items-center gap-3 p-3 rounded-xl hover:-translate-y-0.5 transition-all cursor-pointer`}
+                  >
+                    <div className={`w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 ${isDarkMode ? 'bg-white/5 border border-white/5' : 'bg-gray-50'} flex items-center justify-center`}>
+                      {company.logo ? (
+                        <img
+                          src={company.logo}
+                          alt={company.name}
+                          className="w-full h-full object-contain"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-wazafny-blue to-purple-600 flex items-center justify-center text-white text-lg font-bold">
+                          {company.name.charAt(0)}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-bold">{company.name}</h4>
+                      <div className={`flex items-center gap-1 text-sm ${mutedTextClass}`}>
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        </svg>
+                        {company.location || 'Remote'}
+                      </div>
+                    </div>
+                  </div>
+                )) : (
+                  <p className={`${mutedTextClass} text-sm text-center py-4`}>Loading companies...</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+          </>
+        )}
+
+        {/* Profile View */}
+        {activeView === 'profile' && (
+          <div className="space-y-4">
+            {/* Conditional: Show either Job Search or Profile Dashboard */}
+            {showJobSearch ? (
+              /* Browse Jobs Section */
+              <div className={`${panelClass} rounded-2xl shadow-2xl p-6`}>
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-3xl font-bold bg-gradient-to-r from-wazafny-blue to-purple-600 bg-clip-text text-transparent">
+                    Browse Jobs
+                  </h2>
+                  <button 
+                    onClick={() => setShowJobSearch(false)}
+                    className={`px-4 py-2 font-medium ${isDarkMode ? 'text-gray-300 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}
+                  >
+                    Back to Dashboard
+                  </button>
                 </div>
 
-                {/* Keywords Filter - Enhanced Design */}
-                <div className="mb-4">
-                  <label className="flex items-center gap-2 text-xs font-semibold text-gray-800 mb-2">
-                    <div className="w-6 h-6 bg-gradient-to-r from-blue-500 to-purple-500 rounded-md flex items-center justify-center">
-                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                      </svg>
-                    </div>
-                    Keywords
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="e.g., Designer, Developer"
-                      value={filters.keywords}
-                      onChange={(e) => setFilters({...filters, keywords: e.target.value})}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all duration-300 bg-gray-50 hover:bg-white"
-                    />
-                    <div className="absolute right-2 top-2">
-                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {/* Search and Filter Section */}
+                <div className={`${softPanelClass} rounded-2xl p-6 mb-6`}>
+                  <div className="flex flex-col md:flex-row gap-4 items-center mb-4">
+                    {/* Search Input */}
+                    <div className="flex-1 relative w-full">
+                      <input
+                        type="text"
+                        placeholder="Search your needs..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className={`w-full px-4 py-3 pl-12 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-400 transition-colors ${isDarkMode ? 'bg-[#111524] border border-white/10 text-white placeholder:text-slate-400' : 'border border-gray-200'}`}
+                      />
+                      <svg className={`w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 ${isDarkMode ? 'text-slate-400' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                       </svg>
                     </div>
+
+                    {/* Job Type Filter */}
+                    <select
+                      value={selectedJobType}
+                      onChange={(e) => setSelectedJobType(e.target.value)}
+                      className={`px-4 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-400 transition-colors ${isDarkMode ? 'bg-[#111524] border border-white/10 text-white' : 'border border-gray-200 bg-white'}`}
+                    >
+                      {jobTypes.map(type => (
+                        <option key={type} value={type}>{type}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Category Pills */}
+                  <div className="flex flex-wrap gap-2">
+                    {categories.map(category => (
+                      <button
+                        key={category}
+                        onClick={() => setSelectedCategory(category)}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                          selectedCategory === category
+                            ? 'bg-gradient-to-r from-wazafny-blue to-purple-600 text-white shadow-md'
+                            : isDarkMode
+                              ? 'bg-white/5 text-gray-200 hover:bg-white/10 border border-white/10'
+                              : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                        }`}
+                      >
+                        {category}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
-                {/* Location Filter - Enhanced Design */}
-                <div className="mb-4">
-                  <label className="flex items-center gap-2 text-xs font-semibold text-gray-800 mb-2">
-                    <div className="w-6 h-6 bg-gradient-to-r from-green-500 to-teal-500 rounded-md flex items-center justify-center">
-                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                      </svg>
-                    </div>
-                    Location
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="e.g., New York, Remote"
-                      value={filters.location}
-                      onChange={(e) => setFilters({...filters, location: e.target.value})}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 transition-all duration-300 bg-gray-50 hover:bg-white"
-                    />
-                    <div className="absolute right-2 top-2">
-                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                      </svg>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Salary Range - Enhanced Design */}
-                <div className="mb-4">
-                  <label className="flex items-center gap-2 text-xs font-semibold text-gray-800 mb-2">
-                    <div className="w-6 h-6 bg-gradient-to-r from-emerald-500 to-green-500 rounded-md flex items-center justify-center">
-                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                      </svg>
-                    </div>
-                    Salary Range
-                  </label>
-                  <div className="bg-gradient-to-r from-emerald-50 to-green-50 p-3 rounded-lg border border-emerald-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-emerald-600 font-bold text-sm">$</span>
-                      <input
-                        type="range"
-                        min="0"
-                        max="200000"
-                        step="5000"
-                        value={filters.salaryRange}
-                        onChange={(e) => setFilters({...filters, salaryRange: parseInt(e.target.value)})}
-                        className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                        style={{
-                          background: `linear-gradient(to right, #10b981 0%, #10b981 ${(filters.salaryRange / 200000) * 100}%, #e5e7eb ${(filters.salaryRange / 200000) * 100}%, #e5e7eb 100%)`
-                        }}
-                      />
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-emerald-700">$0</span>
-                      <span className="text-sm font-bold text-emerald-600 bg-white px-2 py-1 rounded shadow-sm">
-                        ${filters.salaryRange.toLocaleString()}+
-                      </span>
-                      <span className="text-xs text-emerald-700">$200k</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Distance - Enhanced Design */}
-                <div className="mb-4">
-                  <label className="flex items-center gap-2 text-xs font-semibold text-gray-800 mb-2">
-                    <div className="w-6 h-6 bg-gradient-to-r from-orange-500 to-red-500 rounded-md flex items-center justify-center">
-                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                      </svg>
-                    </div>
-                    Distance
-                  </label>
-                  <div className="bg-gradient-to-r from-orange-50 to-red-50 p-3 rounded-lg border border-orange-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                      </svg>
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        step="5"
-                        value={filters.distance}
-                        onChange={(e) => setFilters({...filters, distance: parseInt(e.target.value)})}
-                        className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                        style={{
-                          background: `linear-gradient(to right, #f97316 0%, #f97316 ${filters.distance}%, #e5e7eb ${filters.distance}%, #e5e7eb 100%)`
-                        }}
-                      />
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-orange-700">0 Miles</span>
-                      <span className="text-sm font-bold text-orange-600 bg-white px-2 py-1 rounded shadow-sm">
-                        {filters.distance} Miles
-                      </span>
-                      <span className="text-xs text-orange-700">100+ Miles</span>
+                {/* Two Column Layout: Job List + Details */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* Left Column - Job Listings */}
+                  <div className="lg:col-span-1">
+                    <div className={`${panelClass} rounded-2xl shadow-lg overflow-hidden`}>
+                      <div className={`overflow-y-auto pr-1 transition-all duration-200 ${
+                        selectedJobForDetails ? 'max-h-[720px]' : 'max-h-[600px]'
+                      }`}>
+                        {filteredJobsList.map(job => (
+                          <div
+                            key={job.id}
+                            onClick={() => setSelectedJobForDetails(job)}
+                            className={`p-4 cursor-pointer transition-all duration-200 border-b ${isDarkMode ? 'border-white/5' : 'border-gray-100'} ${
+                              selectedJobForDetails?.id === job.id
+                                ? 'bg-gradient-to-r from-purple-500/20 to-purple-600/20 border-l-4 border-purple-500'
+                                : isDarkMode
+                                  ? 'bg-white/5 hover:bg-white/10'
+                                  : 'bg-white hover:bg-gray-50'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 ${isDarkMode ? 'bg-white/10 border border-white/10' : 'bg-white border border-gray-100'}`}>
+                                  {job.companyLogo ? (
+                                    <img
+                                      src={job.companyLogo}
+                                      alt={job.company}
+                                      className="w-full h-full object-contain p-1"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full bg-gradient-to-br from-wazafny-blue to-purple-600 flex items-center justify-center text-white font-bold text-sm">
+                                      {job.company.charAt(0)}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <h3 className="font-bold text-sm truncate">{job.title}</h3>
+                                  <p className={`text-xs truncate ${mutedTextClass}`}>{job.company}</p>
+                                </div>
+                              </div>
+                              <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap ${isDarkMode ? 'bg-purple-500/20 text-purple-200' : 'bg-purple-100 text-purple-700'}`}>
+                                {job.type}
+                              </span>
+                            </div>
+                            <div className={`mt-3 flex items-center justify-between gap-2 text-[11px] ${softerTextClass}`}>
+                              <div className="flex items-center gap-1 truncate">
+                                <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                <span className="truncate">{job.location}</span>
+                              </div>
+                              <div className="flex items-center gap-1 font-semibold text-wazafny-blue">
+                                <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span>{job.salary}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {/* Work Type Checkboxes - Enhanced Design */}
-                <div className="mb-4">
-                  <label className="flex items-center gap-2 text-xs font-semibold text-gray-800 mb-2">
-                    <div className="w-6 h-6 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-md flex items-center justify-center">
-                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                      </svg>
-                    </div>
-                    Work Type
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="flex items-center gap-2 p-2 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 hover:from-blue-100 hover:to-indigo-100 transition-all duration-200 cursor-pointer group">
-                      <input type="checkbox" className="w-3 h-3 text-blue-600 rounded" />
-                      <span className="text-xs font-medium text-blue-700">Remote</span>
-                    </label>
-                    <label className="flex items-center gap-2 p-2 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200 hover:from-green-100 hover:to-emerald-100 transition-all duration-200 cursor-pointer group">
-                      <input type="checkbox" defaultChecked className="w-3 h-3 text-green-600 rounded" />
-                      <span className="text-xs font-medium text-green-700">Hybrid</span>
-                    </label>
-                    <label className="flex items-center gap-2 p-2 bg-gradient-to-r from-orange-50 to-red-50 rounded-lg border border-orange-200 hover:from-orange-100 hover:to-red-100 transition-all duration-200 cursor-pointer group">
-                      <input type="checkbox" className="w-3 h-3 text-orange-600 rounded" />
-                      <span className="text-xs font-medium text-orange-700">On-site</span>
-                    </label>
-                    <label className="flex items-center gap-2 p-2 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200 hover:from-purple-100 hover:to-indigo-100 transition-all duration-200 cursor-pointer group">
-                      <input type="checkbox" className="w-3 h-3 text-purple-600 rounded" />
-                      <span className="text-xs font-medium text-purple-700">Full time</span>
-                    </label>
-                    <label className="flex items-center gap-2 p-2 bg-gradient-to-r from-teal-50 to-cyan-50 rounded-lg border border-teal-200 hover:from-teal-100 hover:to-cyan-100 transition-all duration-200 cursor-pointer group">
-                      <input type="checkbox" className="w-3 h-3 text-teal-600 rounded" />
-                      <span className="text-xs font-medium text-teal-700">Part time</span>
-                    </label>
-                    <label className="flex items-center gap-2 p-2 bg-gradient-to-r from-pink-50 to-rose-50 rounded-lg border border-pink-200 hover:from-pink-100 hover:to-rose-100 transition-all duration-200 cursor-pointer group">
-                      <input type="checkbox" className="w-3 h-3 text-pink-600 rounded" />
-                      <span className="text-xs font-medium text-pink-700">Contract</span>
-                    </label>
+                  {/* Right Column - Job Details */}
+                  <div className="lg:col-span-2">
+                    {selectedJobForDetails ? (
+                      <div className={`${panelClass} rounded-2xl overflow-hidden sticky top-4`}>
+                        {/* Company Cover Photo */}
+                        <div className="h-32 bg-gradient-to-r from-wazafny-blue to-purple-600 relative">
+                          <div className="absolute -bottom-12 left-6">
+                            <div className={`w-24 h-24 rounded-2xl overflow-hidden border-4 ${isDarkMode ? 'bg-[#0b1120] border-[#0b1120]' : 'bg-white border-white'} shadow-xl`}>
+                              {selectedJobForDetails.companyLogo ? (
+                                <img
+                                  src={selectedJobForDetails.companyLogo}
+                                  alt={selectedJobForDetails.company}
+                                  className="w-full h-full object-contain p-2"
+                                />
+                              ) : (
+                                <div className="w-full h-full bg-gradient-to-br from-wazafny-blue to-purple-600 flex items-center justify-center text-white font-bold text-3xl">
+                                  {selectedJobForDetails.company.charAt(0)}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Easy Apply Section */}
+                        <div className={`pt-16 px-6 pb-6 border-b ${isDarkMode ? 'border-white/10 bg-white/5' : 'border-gray-200 bg-gray-50'}`}>
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <h2 className="text-2xl font-bold mb-1">{selectedJobForDetails.title}</h2>
+                              <p className={`${mutedTextClass} mb-3`}>{selectedJobForDetails.company}</p>
+                              <div className={`flex items-center gap-4 text-sm ${softerTextClass} mb-4`}>
+                                <span className="flex items-center gap-1">
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  </svg>
+                                  {selectedJobForDetails.location}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                  {selectedJobForDetails.type}
+                                </span>
+                                <span className={`px-3 py-1 rounded-lg text-sm font-medium ${isDarkMode ? 'bg-green-500/15 text-green-300' : 'bg-green-100 text-green-700'}`}>
+                                  {selectedJobForDetails.salary}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {/* Easy Apply Button */}
+                          <button
+                            onClick={() => {
+                              setSelectedJob(selectedJobForDetails);
+                              setShowEasyApplyForm(true);
+                            }}
+                            className="w-full px-6 py-3 bg-gradient-to-r from-wazafny-blue to-purple-600 text-white rounded-lg font-bold hover:shadow-xl transition-all mb-3"
+                          >
+                            Easy Apply
+                          </button>
+                          <p className={`text-xs text-center ${mutedTextClass}`}>Quick application with your profile</p>
+                        </div>
+
+                        {/* Job Header with Tabs */}
+                        <div className="px-6 pt-4 pb-0">
+                          {/* Tabs */}
+                          <div className={`flex gap-4 border-b ${isDarkMode ? 'border-white/10' : 'border-gray-200'}`}>
+                            <button
+                              onClick={() => setActiveTab('details')}
+                              className={`pb-3 px-2 font-medium transition-all ${
+                                activeTab === 'details'
+                                  ? 'text-wazafny-blue border-b-2 border-wazafny-blue'
+                                  : `${isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-600 hover:text-gray-900'}`
+                              }`}
+                            >
+                              Details
+                            </button>
+                            <button
+                              onClick={() => setActiveTab('company')}
+                              className={`pb-3 px-2 font-medium transition-all ${
+                                activeTab === 'company'
+                                  ? 'text-wazafny-blue border-b-2 border-wazafny-blue'
+                                  : 'text-gray-600 hover:text-gray-900'
+                              }`}
+                            >
+                              Company
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Tab Content */}
+                        <div className="p-6 max-h-[400px] overflow-y-auto">
+                          {activeTab === 'details' ? (
+                            <>
+                              {/* Job Description */}
+                              <div className="mb-6">
+                                <h3 className="text-lg font-bold text-gray-900 mb-3">Job Description</h3>
+                                <p className="text-gray-600 leading-relaxed">
+                                  {selectedJobForDetails.description || 
+                                    "We are looking for a talented professional to join our team. This role offers an excellent opportunity to work on exciting projects and grow your career. The ideal candidate will have strong skills and a passion for excellence."}
+                                </p>
+                              </div>
+
+                              {/* Requirements */}
+                              <div className="mb-6">
+                                <h3 className="text-lg font-bold text-gray-900 mb-3">Requirements</h3>
+                                <ul className="space-y-2">
+                                  <li className="flex items-start gap-2 text-gray-600">
+                                    <svg className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    Bachelor's degree or equivalent experience
+                                  </li>
+                                  <li className="flex items-start gap-2 text-gray-600">
+                                    <svg className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    3+ years of relevant work experience
+                                  </li>
+                                  <li className="flex items-start gap-2 text-gray-600">
+                                    <svg className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    Strong communication and teamwork skills
+                                  </li>
+                                  <li className="flex items-start gap-2 text-gray-600">
+                                    <svg className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    Ability to work in a fast-paced environment
+                                  </li>
+                                </ul>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              {/* Company Info */}
+                              <div className="mb-6">
+                                <h3 className="text-lg font-bold text-gray-900 mb-3">About {selectedJobForDetails.company}</h3>
+                                <p className="text-gray-600 leading-relaxed mb-4">
+                                  {selectedJobForDetails.company} is a leading company in the industry, committed to innovation and excellence. We provide a dynamic work environment where talented individuals can thrive and make a meaningful impact.
+                                </p>
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                                    <svg className="w-5 h-5 text-wazafny-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                    </svg>
+                                    <span>500+ employees</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                                    <svg className="w-5 h-5 text-wazafny-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                    </svg>
+                                    <span>Technology Industry</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                                    <svg className="w-5 h-5 text-wazafny-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                                    </svg>
+                                    <span>www.{selectedJobForDetails.company.toLowerCase().replace(/\s+/g, '')}.com</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Apply Buttons */}
+                        <div className="p-6 border-t border-gray-200 bg-gray-50">
+                          <button
+                            onClick={() => {
+                              setSelectedJob(selectedJobForDetails);
+                              setShowApplicationForm(true);
+                            }}
+                            className="w-full px-6 py-3 bg-gray-900 text-white rounded-lg font-bold hover:bg-gray-800 transition-all"
+                          >
+                            Apply Now
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-12 text-center">
+                        <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        <h3 className="text-xl font-bold text-gray-900 mb-2">Select a Job</h3>
+                        <p className="text-gray-600">Click on a job from the list to view details and apply</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* Profile Dashboard */
+              <>
+            {/* Stats Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Total Applications */}
+              <div className={`${panelClass} rounded-2xl px-6 py-5 transition-all duration-300 hover:-translate-y-1 cursor-pointer border-l-4 border-orange-400/80`}>
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-orange-400 to-pink-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-inner shadow-black/20">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className={`${mutedTextClass} text-[11px] font-semibold uppercase tracking-[0.2em]`}>Total Applications</p>
+                    <h2 className="text-3xl font-black bg-gradient-to-r from-orange-400 via-pink-400 to-pink-500 bg-clip-text text-transparent">845</h2>
+                  </div>
+                </div>
+              </div>
+
+              {/* Application Rejected */}
+              <div className={`${panelClass} rounded-2xl px-6 py-5 transition-all duration-300 hover:-translate-y-1 cursor-pointer border-l-4 border-pink-500/70`}>
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-pink-400 to-rose-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-inner shadow-black/20">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className={`${mutedTextClass} text-[11px] font-semibold uppercase tracking-[0.2em]`}>Application Rejected</p>
+                    <h2 className="text-3xl font-black bg-gradient-to-r from-pink-400 to-rose-500 bg-clip-text text-transparent">123</h2>
+                  </div>
+                </div>
+              </div>
+
+              {/* Interview Schedule */}
+              <div className={`${panelClass} rounded-2xl px-6 py-5 transition-all duration-300 hover:-translate-y-1 cursor-pointer border-l-4 border-purple-500/70`}>
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-purple-400 to-pink-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-inner shadow-black/20">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className={`${mutedTextClass} text-[11px] font-semibold uppercase tracking-[0.2em]`}>Interview Schedule</p>
+                    <h2 className="text-3xl font-black bg-gradient-to-r from-purple-400 via-purple-500 to-pink-500 bg-clip-text text-transparent">34</h2>
+                  </div>
+                </div>
+              </div>
+
+              {/* Profile Visited */}
+              <div className={`${panelClass} rounded-2xl px-6 py-5 transition-all duration-300 hover:-translate-y-1 cursor-pointer border-l-4 border-emerald-400/80`}>
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-green-400 to-emerald-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-inner shadow-black/20">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className={`${mutedTextClass} text-[11px] font-semibold uppercase tracking-[0.2em]`}>Profile Visited</p>
+                    <h2 className="text-3xl font-black bg-gradient-to-r from-green-400 to-emerald-500 bg-clip-text text-transparent">612</h2>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Job Listings - Split into Two Cards */}
-            <div className={`flex-1 ${selectedJob ? 'max-w-md' : ''} transition-all duration-500 ease-in-out flex flex-col gap-4 h-full`}>
-              
-              {/* Search Header Card */}
-              <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 hover:shadow-xl transition-all duration-300">
-                <div className="p-4 bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 text-white rounded-xl">
-                  <h2 className="text-lg font-bold mb-3 flex items-center gap-2">
-                    <div className="w-6 h-6 bg-white/20 rounded-md flex items-center justify-center">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2-2v2m8 0V6a2 2 0 012 2v6a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2V6" />
-                      </svg>
-                    </div>
-                    Discover Your Next Role
-                  </h2>
-                  <div className="flex gap-2">
-                    <div className="flex-1 relative">
-                      <svg className="w-4 h-4 absolute left-3 top-2.5 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                      <input
-                        type="text"
-                        placeholder="Search jobs..."
-                        value={filters.keywords}
-                        onChange={(e) => setFilters({...filters, keywords: e.target.value})}
-                        className="w-full pl-10 pr-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-white/40 text-white placeholder-white/60 text-sm transition-all duration-300"
-                      />
-                    </div>
-                    <div className="relative">
-                      <svg className="w-4 h-4 absolute left-3 top-2.5 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                      </svg>
-                      <input
-                        type="text"
-                        placeholder="Location"
-                        value={filters.location}
-                        onChange={(e) => setFilters({...filters, location: e.target.value})}
-                        className="w-32 pl-10 pr-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-white/40 text-white placeholder-white/60 text-sm transition-all duration-300"
-                      />
-                    </div>
+            {/* Charts Row */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {/* Salary Trend Chart */}
+              <div className={`${chartSurfaceClass} rounded-2xl p-5 shadow-lg hover:shadow-2xl transition-shadow duration-300 border border-white/5`}>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-bold flex items-center gap-2 text-white">
+                    <span className="w-2 h-2 rounded-full bg-gradient-to-r from-orange-400 to-pink-500"></span>
+                    Salary Trend
+                  </h3>
+                  <select className={`text-xs rounded-lg px-2 py-0.5 focus:outline-none focus:ring-2 transition-colors ${isDarkMode ? 'bg-[#1f2233] border border-white/10 text-gray-300 focus:ring-orange-400/30' : 'border border-gray-200 text-gray-700 focus:ring-orange-400/30'}`}>
+                    <option>Monthly</option>
+                    <option>Weekly</option>
+                  </select>
+                </div>
+                <div className={`h-32 relative rounded-xl overflow-hidden ${isDarkMode ? 'bg-gradient-to-br from-[#1a1c2c] via-[#121424] to-[#1c1f33]' : 'bg-gradient-to-br from-orange-50 via-pink-50 to-purple-50'}`}>
+                  <svg className="w-full h-full" viewBox="0 0 200 80" preserveAspectRatio="none">
+                    <defs>
+                      {/* Orange wave gradient */}
+                      <linearGradient id="orangeWave" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" stopColor="#fb923c" stopOpacity="0.95" />
+                        <stop offset="100%" stopColor="#fb923c" stopOpacity="0.2" />
+                      </linearGradient>
+                      {/* Pink wave gradient */}
+                      <linearGradient id="pinkWave" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" stopColor="#ec4899" stopOpacity="0.9" />
+                        <stop offset="100%" stopColor="#ec4899" stopOpacity="0.15" />
+                      </linearGradient>
+                      {/* Purple wave gradient */}
+                      <linearGradient id="purpleWave" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" stopColor="#a855f7" stopOpacity="0.85" />
+                        <stop offset="100%" stopColor="#a855f7" stopOpacity="0.12" />
+                      </linearGradient>
+                      {/* Red wave gradient */}
+                      <linearGradient id="redWave" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" stopColor="#ef4444" stopOpacity="0.88" />
+                        <stop offset="100%" stopColor="#ef4444" stopOpacity="0.18" />
+                      </linearGradient>
+                    </defs>
+                    
+                    {/* Large orange wave in background */}
+                    <path d="M0,35 Q25,20 50,28 T100,22 T150,30 T200,24 L200,80 L0,80 Z" 
+                          fill="url(#orangeWave)">
+                      <animate attributeName="d" 
+                               dur="10s" 
+                               repeatCount="indefinite"
+                               values="M0,35 Q25,20 50,28 T100,22 T150,30 T200,24 L200,80 L0,80 Z;
+                                       M0,32 Q25,18 50,25 T100,20 T150,27 T200,22 L200,80 L0,80 Z;
+                                       M0,35 Q25,20 50,28 T100,22 T150,30 T200,24 L200,80 L0,80 Z"/>
+                    </path>
+                    
+                    {/* Pink wave flowing through */}
+                    <path d="M0,42 Q20,28 40,35 T80,30 T120,38 T160,32 T200,36 L200,80 L0,80 Z" 
+                          fill="url(#pinkWave)">
+                      <animate attributeName="d" 
+                               dur="12s" 
+                               repeatCount="indefinite"
+                               values="M0,42 Q20,28 40,35 T80,30 T120,38 T160,32 T200,36 L200,80 L0,80 Z;
+                                       M0,38 Q20,25 40,32 T80,28 T120,35 T160,30 T200,34 L200,80 L0,80 Z;
+                                       M0,42 Q20,28 40,35 T80,30 T120,38 T160,32 T200,36 L200,80 L0,80 Z"/>
+                    </path>
+                    
+                    {/* Purple wave overlay */}
+                    <path d="M0,28 Q30,15 60,22 T120,18 T180,24 T200,20 L200,80 L0,80 Z" 
+                          fill="url(#purpleWave)">
+                      <animate attributeName="d" 
+                               dur="14s" 
+                               repeatCount="indefinite"
+                               values="M0,28 Q30,15 60,22 T120,18 T180,24 T200,20 L200,80 L0,80 Z;
+                                       M0,25 Q30,12 60,20 T120,16 T180,22 T200,18 L200,80 L0,80 Z;
+                                       M0,28 Q30,15 60,22 T120,18 T180,24 T200,20 L200,80 L0,80 Z"/>
+                    </path>
+                    
+                    {/* Red/coral accent wave */}
+                    <path d="M0,48 Q18,35 36,40 T72,36 T108,42 T144,38 T180,44 T200,40 L200,80 L0,80 Z" 
+                          fill="url(#redWave)">
+                      <animate attributeName="d" 
+                               dur="16s" 
+                               repeatCount="indefinite"
+                               values="M0,48 Q18,35 36,40 T72,36 T108,42 T144,38 T180,44 T200,40 L200,80 L0,80 Z;
+                                       M0,45 Q18,32 36,38 T72,34 T108,40 T144,36 T180,42 T200,38 L200,80 L0,80 Z;
+                                       M0,48 Q18,35 36,40 T72,36 T108,42 T144,38 T180,44 T200,40 L200,80 L0,80 Z"/>
+                    </path>
+                    
+                    {/* Timeline with dots */}
+                    <line x1="0" y1="40" x2="200" y2="40" stroke="gray" strokeWidth="0.5" opacity="0.3"/>
+                    {[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200].map((x, i) => (
+                      <circle key={i} cx={x} cy="40" r="1.2" fill="gray" opacity="0.4"/>
+                    ))}
+                  </svg>
+                  
+                  {/* Timeline labels */}
+                  <div className={`absolute bottom-1 left-0 right-0 flex justify-between px-1 text-[8px] font-medium ${mutedTextClass}`}>
+                    <span>0</span>
+                    <span>20</span>
+                    <span>40</span>
+                    <span>60</span>
+                    <span>80</span>
+                    <span>100</span>
+                    <span>120</span>
+                    <span>140</span>
+                    <span>160</span>
+                    <span>180</span>
+                    <span>200</span>
                   </div>
-                  <div className="flex justify-between items-center mt-3">
-                    <p className="text-white/80 text-sm font-medium flex items-center gap-1">
-                      <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
-                      {filteredJobsList.length} jobs
-                    </p>
-                    <div className="flex gap-1">
-                      <button className="px-2 py-1 bg-white/20 hover:bg-white/30 rounded text-xs font-medium transition-all duration-200 flex items-center gap-1">
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
-                        </svg>
-                        Sort
-                      </button>
-                    </div>
+                </div>
+                <div className="flex items-center justify-center gap-3 mt-2">
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-gradient-to-r from-orange-400 to-pink-500"></div>
+                    <span className={`text-xs ${softerTextClass}`}>Application Sent</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-gradient-to-r from-orange-500 to-pink-400"></div>
+                    <span className={`text-xs ${softerTextClass}`}>Interview</span>
                   </div>
                 </div>
               </div>
 
-              {/* Job List Card */}
-              <div className="bg-white/40 backdrop-blur-lg rounded-xl shadow-xl border border-purple-200/40 flex-1 min-h-0 hover:shadow-2xl hover:bg-white/60 transition-all duration-300">
-                <div className="h-full overflow-y-auto p-4">
+              {/* Profile Views Chart */}
+              <div className={`${chartSurfaceClass} rounded-2xl p-5 shadow-lg hover:shadow-2xl transition-shadow duration-300 border border-white/5`}>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-bold flex items-center gap-2 text-white">
+                    <span className="w-2 h-2 rounded-full bg-gradient-to-r from-pink-400 to-rose-500"></span>
+                    Profile Views
+                  </h3>
+                  <select className={`text-xs rounded-lg px-2 py-0.5 focus:outline-none focus:ring-2 transition-colors ${isDarkMode ? 'bg-[#1f2233] border border-white/10 text-gray-300 focus:ring-pink-400/30' : 'border border-gray-200 text-gray-700 focus:ring-pink-400/30'}`}>
+                    <option>Monthly</option>
+                  </select>
+                </div>
+                <div className={`h-32 flex items-end justify-between gap-1 rounded-xl p-3 ${isDarkMode ? 'bg-gradient-to-br from-[#1e1424] via-[#2a152d] to-[#1f0f22]' : 'bg-gradient-to-br from-pink-50 to-rose-50'}`}>
+                  {[40, 55, 35, 60, 75, 45, 70, 50, 80, 55, 75, 65].map((height, i) => (
+                    <div 
+                      key={i}
+                      className={`flex-1 rounded-t-lg relative group cursor-pointer transition-all hover:scale-105 shadow-sm ${
+                        i % 2 === 0 
+                          ? 'bg-gradient-to-t from-pink-500 via-pink-600 to-pink-700 hover:from-pink-600 hover:to-pink-800' 
+                          : 'bg-gradient-to-t from-rose-300 via-rose-400 to-rose-400 hover:from-rose-400 hover:to-rose-500'
+                      }`}
+                      style={{height: `${height}%`}}
+                    >
+                      {i === 4 && (
+                        <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-gradient-to-r from-pink-500 to-rose-500 text-white text-xs px-2 py-1 rounded-lg whitespace-nowrap shadow-lg font-bold">24,892</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center justify-center gap-3 mt-2">
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-gradient-to-r from-pink-500 to-pink-700"></div>
+                    <span className={`text-xs ${softerTextClass}`}>Recruiter</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-gradient-to-r from-rose-300 to-rose-400"></div>
+                    <span className={`text-xs ${softerTextClass}`}>User</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Application Status Chart - Third Container */}
+              <div className={`${chartSurfaceClass} rounded-2xl p-5 shadow-lg hover:shadow-2xl transition-shadow duration-300 border border-white/5`}>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-bold flex items-center gap-2 text-white">
+                    <span className="w-2 h-2 rounded-full bg-gradient-to-r from-purple-400 to-pink-500"></span>
+                    Salary Trend
+                  </h3>
+                  <div className="flex items-center gap-1">
+                    <select className={`text-xs rounded-lg px-2 py-0.5 focus:outline-none focus:ring-2 transition-colors ${isDarkMode ? 'bg-[#1f2233] border border-white/10 text-gray-300 focus:ring-purple-400/30' : 'border border-gray-200 text-gray-700 focus:ring-purple-400/30'}`}>
+                      <option>2027</option>
+                      <option>2026</option>
+                      <option>2025</option>
+                    </select>
+                    <select className={`text-xs rounded-lg px-2 py-0.5 focus:outline-none transition-colors ${isDarkMode ? 'bg-[#1f2233] border border-white/10 text-gray-300' : 'border border-gray-200 text-gray-700'}`}>
+                      <option>Monthly</option>
+                      <option>Weekly</option>
+                    </select>
+                  </div>
+                </div>
+                <div className={`h-32 flex items-end justify-between gap-1 rounded-xl p-3 ${isDarkMode ? 'bg-gradient-to-br from-[#1b1230] via-[#201833] to-[#1b0f2a]' : 'bg-gradient-to-br from-purple-50 to-pink-50'}`}>
+                  <div className="flex-1 flex items-end justify-center bg-gradient-to-t from-purple-400 to-purple-500 rounded-t-lg" style={{height: '45%'}}></div>
+                  <div className="flex-1 flex items-end justify-center bg-gradient-to-t from-purple-400 to-purple-500 rounded-t-lg" style={{height: '55%'}}></div>
+                  <div className="flex-1 flex items-end justify-center bg-gradient-to-t from-purple-400 to-purple-500 rounded-t-lg" style={{height: '70%'}}></div>
+                  <div className="flex-1 flex items-end justify-center bg-gradient-to-t from-purple-400 to-purple-500 rounded-t-lg" style={{height: '50%'}}></div>
+                  <div className="flex-1 flex items-end justify-center bg-gradient-to-t from-purple-500 to-pink-500 rounded-t-lg relative" style={{height: '85%'}}>
+                    <div className="absolute -top-5 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs px-1.5 py-0.5 rounded font-bold">$4,892</div>
+                  </div>
+                  <div className="flex-1 flex items-end justify-center bg-gradient-to-t from-purple-400 to-purple-500 rounded-t-lg" style={{height: '60%'}}></div>
+                </div>
+              </div>
+            </div>
+
+            {/* Main Content Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {/* Left Column - Profile & Portfolio */}
+              <div className="space-y-4">
+                {/* User Profile Card */}
+                <div className={`${panelClass} rounded-2xl p-5 shadow-xl transition-all duration-300`}>
+                  <div className="flex items-start gap-4 mb-6">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-wazafny-blue to-purple-600 flex items-center justify-center text-white text-2xl font-bold ring-4 ring-white/10">
+                      {user?.firstName?.charAt(0) || 'U'}
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-bold text-xl leading-tight">{user?.firstName || 'User'} {user?.lastName || ''}</h3>
+                      <p className={`text-xs flex items-center gap-1 ${mutedTextClass}`}>
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M6 6V5a3 3 0 013-3h2a3 3 0 013 3v1h2a2 2 0 012 2v3.57A22.952 22.952 0 0110 13a22.95 22.95 0 01-8-1.43V8a2 2 0 012-2h2zm2-1a1 1 0 011-1h2a1 1 0 011 1v1H8V5zm1 5a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1z" clipRule="evenodd" />
+                          <path d="M2 13.692V16a2 2 0 002 2h12a2 2 0 002-2v-2.308A24.974 24.974 0 0110 15c-2.796 0-5.487-.46-8-1.308z" />
+                        </svg>
+                        {user?.jobTitle || 'Software Engineer'}
+                      </p>
+                      <button className="mt-3 text-xs text-white bg-gradient-to-r from-wazafny-blue to-purple-600 hover:from-blue-700 hover:to-purple-700 px-4 py-1.5 rounded-lg flex items-center gap-1 transition-all shadow-lg">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                        Edit Profile
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 mb-5">
+                    {[{
+                      label: 'Experience',
+                      value: user?.experience || '10+ years'
+                    }, {
+                      label: 'Work Level',
+                      value: 'Expert'
+                    }, {
+                      label: 'Projects',
+                      value: '450+'
+                    }, {
+                      label: 'Completed',
+                      value: '700+'
+                    }].map((item, idx) => (
+                      <div key={idx} className={`${softPanelClass} rounded-xl p-3`}> 
+                        <p className={`text-[11px] uppercase tracking-[0.2em] ${mutedTextClass}`}>{item.label}</p>
+                        <p className="font-semibold text-base">{item.value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Skills */}
+                  <div className="mb-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-bold text-sm">Skills</h4>
+                      <button className={`text-sm ${mutedTextClass}`}>+</button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(user?.skills || ['Node.js', 'Bootstrap', 'Angular.JS', 'Python', 'React', 'Laravel']).slice(0, 6).map((skill, i) => (
+                        <span 
+                          key={i} 
+                          className={`px-2 py-1 rounded-lg text-xs font-medium border ${isDarkMode ? 'bg-white/5 text-white border-white/10' : 'bg-purple-50 text-purple-600 border-purple-100'}`}
+                        >
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Portfolio */}
+                <div className={`${panelClass} rounded-2xl p-5 shadow-lg`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="font-bold text-sm">Portfolio</h4>
+                    <button className={`text-sm ${mutedTextClass}`}>+</button>
+                  </div>
                   <div className="space-y-3">
-                    {filteredJobsList.map((job, index) => (
-                      <div
-                        key={job.id}
-                        className={`group relative p-4 rounded-xl cursor-pointer transition-all duration-300 ease-out transform hover:scale-[1.01] ${
-                          selectedJob?.id === job.id 
-                            ? 'bg-gradient-to-r from-blue-50 via-purple-50 to-indigo-50 border-2 border-blue-400 shadow-lg ring-2 ring-blue-500/20' 
-                            : 'bg-white/70 backdrop-blur-sm border border-gray-200/50 hover:border-blue-300 hover:shadow-md hover:bg-white/90'
-                        }`}
-                        onClick={() => setSelectedJob(job)}
-                      >
-                        {/* Animated background gradient on hover */}
-                        <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-blue-400/5 via-purple-400/5 to-indigo-400/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                        
-                        <div className="relative flex gap-3">
-                          {/* Company Logo with enhanced styling */}
-                          <div className="relative">
-                            <div className="w-12 h-12 bg-white rounded-lg shadow-md p-2 ring-1 ring-gray-200 group-hover:ring-blue-300 transition-all duration-300">
-                              <img
-                                src={job.companyLogo}
-                                alt={job.company}
-                                className="w-full h-full object-contain"
-                              />
-                            </div>
-                            {/* Notification dot for new jobs */}
-                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-gradient-to-r from-emerald-400 to-green-500 rounded-full flex items-center justify-center">
-                              <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>
-                            </div>
-                          </div>
-                          
-                          <div className="flex-1 min-w-0 space-y-2">
-                            {/* Job Title with enhanced styling */}
-                            <div className="flex items-start justify-between">
-                              <h3 className="font-bold text-gray-900 text-lg group-hover:text-blue-600 transition-colors duration-300 leading-tight">
-                                {job.title}
-                              </h3>
-                              <button className="opacity-0 group-hover:opacity-100 transition-all duration-300 p-2 hover:bg-blue-100 rounded-lg">
-                                <svg className="w-5 h-5 text-gray-400 hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                                </svg>
-                              </button>
-                            </div>
-                            
-                            {/* Company and Location */}
-                            <div className="flex items-center gap-3 text-sm">
-                              <span className="font-semibold text-gray-700 flex items-center gap-1">
-                                <div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div>
-                                {job.company}
-                              </span>
-                              <span className="text-gray-500 flex items-center gap-1">
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                </svg>
-                                {job.location}
-                              </span>
-                              <span className="px-2 py-1 bg-gradient-to-r from-blue-100 to-purple-100 text-blue-700 rounded-full text-xs font-medium">
-                                {job.type}
-                              </span>
-                            </div>
-                            
-                            {/* Salary with enhanced styling */}
-                            {job.salary && (
-                              <div className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-emerald-100 to-green-100 rounded-lg w-fit">
-                                <svg className="w-3 h-3 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                                </svg>
-                                <span className="font-bold text-emerald-700 text-sm">{job.salary}</span>
-                              </div>
-                            )}
-                            
-                            {/* Status indicators */}
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium">
-                                  <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div>
-                                  Actively hiring
-                                </span>
-                                <span className="text-xs text-gray-400">1w ago</span>
-                              </div>
-                              
-                              <div className="flex items-center gap-1">
-                                <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-medium">
-                                  100+ applicants
-                                </span>
-                                {selectedJob?.id === job.id && (
-                                  <div className="flex items-center gap-1 text-blue-600 text-xs font-medium animate-pulse">
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                    </svg>
-                                    Viewing
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
+                    {[{ title: 'My Portfolio 03', size: 'PDF · 10 MB' }, { title: 'Recent Century Portfolio', size: 'PDF · 23 MB' }].map((item) => (
+                      <div key={item.title} className={`${softPanelClass} rounded-xl p-3 flex items-center gap-3 hover:-translate-y-0.5 transition-transform cursor-pointer`}>
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${isDarkMode ? 'bg-white/10' : 'bg-red-100'}`}>
+                          <svg className={`w-5 h-5 ${isDarkMode ? 'text-white' : 'text-red-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                          </svg>
                         </div>
+                        <div className="flex-1 min-w-0">
+                          <h5 className="font-semibold text-sm truncate">{item.title}</h5>
+                          <p className={`text-xs ${softerTextClass}`}>{item.size}</p>
+                        </div>
+                        <svg className={`w-4 h-4 ${mutedTextClass}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Middle Column - Experience & Interviews */}
+              <div className="space-y-4">
+                {/* Experience */}
+                <div className={`${panelClass} rounded-2xl p-5 shadow-lg`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="font-bold text-sm">Experience</h4>
+                    <button className={`text-sm ${mutedTextClass}`}>+</button>
+                  </div>
+                  <div className="space-y-3">
+                    {[{
+                      role: 'Lead Software Engineer',
+                      company: 'Invormation Technology Inc.',
+                      duration: 'Sep 2024 - Present'
+                    }, {
+                      role: 'Software Engineer',
+                      company: 'Precision Bytes',
+                      duration: 'Aug 2021 - Aug 2024'
+                    }, {
+                      role: 'Software Engineer',
+                      company: 'Logic Line Innovations',
+                      duration: 'Jan 2011 - Apr 2021'
+                    }].map((job) => (
+                      <div key={job.role} className={`${softPanelClass} rounded-xl p-3`}> 
+                        <h5 className="font-semibold text-sm">{job.role}</h5>
+                        <p className={`text-xs ${softerTextClass}`}>{job.company}</p>
+                        <p className={`text-[11px] ${mutedTextClass}`}>{job.duration}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Upcoming Interview */}
+                <div className={`${panelClass} rounded-2xl p-5 shadow-lg`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="font-bold text-sm">Upcoming Interview</h4>
+                    <button className={`text-sm ${mutedTextClass}`}>
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="text-center mb-4">
+                    <p className={`text-xs ${mutedTextClass}`}>Today Sep 20, 2027</p>
+                  </div>
+                  <div className="space-y-3">
+                    {[{
+                      name: 'Brielle Dionne',
+                      company: 'Innovate Logic',
+                      time: '09:00',
+                      gradient: 'from-pink-400 to-purple-400'
+                    }, {
+                      name: 'Jeff Tanako',
+                      company: 'Data Doves',
+                      time: '07:00',
+                      gradient: 'from-blue-400 to-cyan-400'
+                    }].map((event) => (
+                      <div key={event.name} className={`${softPanelClass} rounded-xl p-3 flex items-center gap-3`}>
+                        <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${event.gradient} flex items-center justify-center text-white font-bold text-xs flex-shrink-0`}>
+                          {event.name.charAt(0)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h5 className="font-semibold text-sm truncate">{event.name}</h5>
+                          <p className={`text-xs ${softerTextClass}`}>{event.company}</p>
+                        </div>
+                        <span className={`text-xs font-medium ${mutedTextClass} flex-shrink-0`}>{event.time}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column - Application History */}
+              <div className="space-y-4">
+                {/* Application History */}
+                <div className={`${panelClass} rounded-2xl p-5 shadow-lg`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="font-bold text-sm">Application History</h4>
+                    <select className={`text-xs rounded-lg px-2 py-0.5 focus:outline-none ${isDarkMode ? 'bg-[#1f2233] border border-white/10 text-gray-300' : 'border border-gray-200 text-gray-700'}`}>
+                      <option>Last 24h</option>
+                      <option>Last Week</option>
+                      <option>Last Month</option>
+                    </select>
+                  </div>
+                  <div className="space-y-3">
+                    {[{
+                      title: 'Product Designer',
+                      subtitle: 'Google Inc • Irvine, CA',
+                      status: 'In Review',
+                      statusClass: 'bg-blue-500/20 text-blue-300',
+                      border: 'border-blue-500'
+                    }, {
+                      title: 'Finance Manager',
+                      subtitle: 'Vacant Land • LA, CA',
+                      status: 'Decline',
+                      statusClass: 'bg-red-500/15 text-red-300',
+                      border: 'border-red-500'
+                    }, {
+                      title: 'Product Designer',
+                      subtitle: 'Complex Studio • San Diego',
+                      status: 'Decline',
+                      statusClass: 'bg-red-500/15 text-red-300',
+                      border: 'border-red-500'
+                    }].map((item) => (
+                      <div key={item.title + item.subtitle} className={`${softPanelClass} rounded-xl p-3 flex items-center gap-3 border-l-4 ${item.border}`}>
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-wazafny-blue to-purple-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                          {item.title.charAt(0)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h5 className="font-semibold text-sm truncate">{item.title}</h5>
+                          <p className={`text-xs truncate ${softerTextClass}`}>{item.subtitle}</p>
+                        </div>
+                        <span className={`px-3 py-1 rounded-full text-[11px] font-semibold ${item.statusClass}`}>{item.status}</span>
                       </div>
                     ))}
                   </div>
                 </div>
               </div>
             </div>
-
-            {/* Right Section - Job Details & Application with Smooth Animations */}
-            {selectedJob && (
-              <div className="flex-1 transform transition-all duration-500 ease-out animate-in slide-in-from-right h-full">
-                <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-white/30 h-full overflow-y-auto">
-                  {/* Company Office Image Header with Parallax Effect */}
-                  <div className="relative h-48 bg-gradient-to-br from-blue-600 via-purple-600 to-indigo-700 overflow-hidden">
-                    <img
-                      src="https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&h=400&fit=crop"
-                      alt="Office"
-                      className="w-full h-full object-cover opacity-70 hover:opacity-80 transition-opacity duration-500 hover:scale-110 transform duration-700"
-                    />
-                    
-                    {/* Gradient overlay for better text readability */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent"></div>
-                    
-                    {/* Floating action buttons */}
-                    <div className="absolute top-4 right-4 flex gap-2">
-                      <button
-                        onClick={() => setSelectedJob(null)}
-                        className="bg-white/20 backdrop-blur-sm hover:bg-white/30 rounded-full p-2 text-white hover:text-white shadow-lg transition-all duration-300 hover:scale-110"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                      <button className="bg-white/20 backdrop-blur-sm hover:bg-white/30 rounded-full p-2 text-white hover:text-white shadow-lg transition-all duration-300 hover:scale-110">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
-                        </svg>
-                      </button>
-                    </div>
-                    
-                    {/* Job status badge */}
-                    <div className="absolute top-4 left-4">
-                      <div className="flex items-center gap-2 bg-emerald-500/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-full shadow-lg">
-                        <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>
-                        <span className="text-xs font-semibold">Recently Posted</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="p-8">
-                    {/* Job Header with Logo - Enhanced Design */}
-                    <div className="flex items-start gap-6 mb-8 -mt-16">
-                      <div className="relative">
-                        <div className="bg-white rounded-xl p-3 shadow-xl ring-2 ring-white/30 hover:shadow-2xl transition-all duration-300 hover:scale-105">
-                          <img
-                            src={selectedJob.companyLogo}
-                            alt={selectedJob.company}
-                            className="w-16 h-16 object-contain"
-                          />
-                        </div>
-                        {/* Company verification badge */}
-                        <div className="absolute -bottom-2 -right-2 bg-blue-600 text-white rounded-full p-2 shadow-lg">
-                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                          </svg>
-                        </div>
-                      </div>
-                      <div className="flex-1 mt-16 space-y-3">
-                        <div className="space-y-1">
-                          <h2 className="text-2xl font-bold text-gray-900 leading-tight bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                            {selectedJob.title}
-                          </h2>
-                          <div className="flex items-center gap-3">
-                            <span className="flex items-center gap-2 text-blue-600 font-bold text-base">
-                              <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
-                              {selectedJob.company}
-                            </span>
-                            <div className="flex items-center gap-2 text-gray-600">
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                              </svg>
-                              <span className="font-medium text-sm">{selectedJob.location}</span>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        {/* Quick stats */}
-                        <div className="flex gap-2">
-                          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-green-100 to-emerald-100 rounded-lg">
-                            <svg className="w-3.5 h-3.5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <span className="text-green-700 font-semibold text-xs">Posted 2 days ago</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-orange-100 to-red-100 rounded-lg">
-                            <svg className="w-3.5 h-3.5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                            </svg>
-                            <span className="text-orange-700 font-semibold text-xs">120+ Applied</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Action Buttons - Enhanced Design */}
-                    <div className="flex gap-3 mb-6">
-                      <button 
-                        onClick={() => setShowEasyApplyForm(true)}
-                        className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-3 rounded-xl font-bold text-base transition-all duration-300 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform hover:scale-105 hover:-translate-y-0.5"
-                      >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                        </svg>
-                        Easy Apply
-                        <div className="absolute inset-0 rounded-xl bg-white/20 opacity-0 hover:opacity-100 transition-opacity duration-300"></div>
-                      </button>
-                      <button className="px-6 py-3 border-2 border-gray-300 hover:border-blue-500 text-gray-700 hover:text-blue-600 rounded-xl font-bold transition-all duration-300 flex items-center justify-center gap-2 hover:bg-blue-50 hover:shadow-lg hover:scale-105">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                        </svg>
-                        Save Job
-                      </button>
-                      <button className="px-4 py-3 border-2 border-gray-300 hover:border-emerald-500 text-gray-700 hover:text-emerald-600 rounded-xl font-bold transition-all duration-300 flex items-center justify-center gap-2 hover:bg-emerald-50 hover:shadow-lg hover:scale-105">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
-                        </svg>
-                      </button>
-                    </div>
-
-                    {/* Job Type Badges - Enhanced Design */}
-                    <div className="flex flex-wrap gap-2 mb-6">
-                      <span className="px-4 py-1.5 bg-gradient-to-r from-blue-100 to-blue-200 text-blue-800 text-xs rounded-full font-semibold border border-blue-300 flex items-center gap-1.5">
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                        </svg>
-                        {selectedJob.type}
-                      </span>
-                      <span className="px-4 py-1.5 bg-gradient-to-r from-green-100 to-emerald-200 text-green-800 text-xs rounded-full font-semibold border border-green-300 flex items-center gap-1.5">
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        {selectedJob.remote ? 'Remote Friendly' : 'On-site'}
-                      </span>
-                      <span className="px-4 py-1.5 bg-gradient-to-r from-purple-100 to-indigo-200 text-purple-800 text-xs rounded-full font-semibold border border-purple-300 flex items-center gap-1.5">
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                        </svg>
-                        Fast Apply
-                      </span>
-                    </div>
-
-                    {/* Profile Match Section - Enhanced Design */}
-                    <div className="relative bg-gradient-to-r from-orange-50 via-amber-50 to-yellow-50 border-2 border-orange-200 rounded-2xl p-6 mb-8 overflow-hidden">
-                      {/* Background pattern */}
-                      <div className="absolute inset-0 opacity-10">
-                        <div className="absolute top-4 right-4 w-20 h-20 bg-orange-300 rounded-full"></div>
-                        <div className="absolute bottom-4 left-4 w-12 h-12 bg-yellow-300 rounded-full"></div>
-                      </div>
-                      
-                      <div className="relative flex items-start gap-4">
-                        <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-r from-orange-500 to-yellow-500 rounded-2xl flex items-center justify-center shadow-lg">
-                          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                          </svg>
-                        </div>
-                        <div className="flex-1">
-                          <h4 className="font-bold text-gray-900 text-lg mb-2">
-                            ⚡ Great Profile Match!
-                          </h4>
-                          <p className="text-gray-700 mb-3">
-                            Your skills and experience align well with this role's requirements. You're in the top 15% of candidates.
-                          </p>
-                          <button className="bg-gradient-to-r from-orange-500 to-yellow-500 hover:from-orange-600 hover:to-yellow-600 text-white px-6 py-2 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg">
-                            View Match Details
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Job Description Section - Enhanced Design */}
-                    <div className="mb-8">
-                      <div className="mb-4">
-                        <h3 className="text-xl font-bold text-gray-900">Job Description</h3>
-                      </div>
-                      <div className="bg-gradient-to-br from-gray-50 via-blue-50/30 to-indigo-50/20 rounded-2xl p-6 border-2 border-gray-200/50 hover:border-blue-300/50 transition-all duration-300">
-                        <p className="text-gray-700 leading-relaxed text-base">
-                          {selectedJob.description || 'We are looking for a passionate and experienced professional to join our dynamic team. This role offers exciting opportunities for growth and innovation in a collaborative environment where your skills will make a real impact.'}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Job Requirements Section - Enhanced Design */}
-                    {selectedJob.requirements && selectedJob.requirements.length > 0 && (
-                      <div className="mb-8">
-                        <div className="mb-4">
-                          <h3 className="text-xl font-bold text-gray-900">Requirements & Qualifications</h3>
-                        </div>
-                        <div className="bg-gradient-to-br from-purple-50 via-pink-50/30 to-indigo-50/20 rounded-2xl p-6 border-2 border-purple-200/50 hover:border-purple-300/50 transition-all duration-300">
-                          <ul className="space-y-4">
-                            {selectedJob.requirements.map((requirement, index) => (
-                              <li key={index} className="group">
-                                <span className="text-gray-700 font-medium leading-relaxed group-hover:text-gray-900 transition-colors duration-200">• {requirement}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Job Benefits Section - Enhanced Design */}
-                    {selectedJob.benefits && selectedJob.benefits.length > 0 && (
-                      <div className="mb-8">
-                        <div className="mb-4">
-                          <h3 className="text-xl font-bold text-gray-900">Benefits & Perks</h3>
-                        </div>
-                        <div className="bg-gradient-to-br from-emerald-50 via-teal-50/30 to-green-50/20 rounded-2xl p-6 border-2 border-emerald-200/50 hover:border-emerald-300/50 transition-all duration-300">
-                          <div className="grid grid-cols-1 gap-4">
-                            {selectedJob.benefits.map((benefit, index) => (
-                              <div key={index} className="p-4 bg-white/70 rounded-xl hover:bg-white/90 transition-all duration-200 group border border-emerald-200/30">
-                                <span className="text-gray-800 font-semibold leading-relaxed group-hover:text-emerald-700 transition-colors duration-200">• {benefit}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Salary Information - Enhanced Design */}
-                    {selectedJob.salary && (
-                      <div className="mb-8">
-                        <div className="mb-4">
-                          <h3 className="text-xl font-bold text-gray-900">Compensation Package</h3>
-                        </div>
-                        <div className="bg-gradient-to-br from-green-50 via-emerald-50/30 to-teal-50/20 rounded-2xl p-6 border-2 border-green-200/50 hover:border-green-300/50 transition-all duration-300">
-                          <div className="flex items-center justify-between mb-4">
-                            <div>
-                              <p className="text-2xl font-bold text-green-700 mb-1">{selectedJob.salary}</p>
-                              <p className="text-green-600 text-sm font-medium">Annual Base Salary</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-sm text-green-600 font-medium">Competitive Package</p>
-                              <p className="text-xs text-green-500">+ Benefits & Bonuses</p>
-                            </div>
-                          </div>
-                          <div className="flex gap-2 flex-wrap">
-                            <span className="px-3 py-1 bg-green-200/50 text-green-700 text-xs rounded-full font-medium">
-                              Health Insurance
-                            </span>
-                            <span className="px-3 py-1 bg-blue-200/50 text-blue-700 text-xs rounded-full font-medium">
-                              401(k) Match
-                            </span>
-                            <span className="px-3 py-1 bg-purple-200/50 text-purple-700 text-xs rounded-full font-medium">
-                              Performance Bonus
-                            </span>
-                            <span className="px-3 py-1 bg-orange-200/50 text-orange-700 text-xs rounded-full font-medium">
-                              Stock Options
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Simple Apply Button - Opens Multi-step Form */}
-                    <div className="pt-6">
-                      <button
-                        onClick={() => setShowApplicationForm(true)}
-                        className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white py-4 rounded-xl font-bold text-lg transition-all duration-300 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform hover:scale-105"
-                      >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                        </svg>
-                        Apply
-                        <div className="absolute inset-0 rounded-xl bg-white/20 opacity-0 hover:opacity-100 transition-opacity duration-300"></div>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              </>
             )}
           </div>
-        </div>
-      ) : (
-        /* PROFILE DASHBOARD VIEW */
-        <div className="bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-100 min-h-screen">
-          {/* Header */}
-          <div className="bg-white/50 backdrop-blur-lg border-b border-purple-200/50">
-            <div className="max-w-7xl mx-auto px-6 py-4">
-              <div className="flex items-center justify-between">
-                <button 
-                  onClick={() => setView('browse')}
-                  className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                  <span>Back to {profileData.jobTitle || 'Job Search'}</span>
-                </button>
-                
-                <div className="flex items-center gap-4">
-                  {!editMode ? (
-                    <button
-                      onClick={() => setEditMode(true)}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold"
-                    >
-                      Edit Profile
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        onClick={handleCancelEdit}
-                        className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleSaveProfile}
-                        disabled={saving}
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-semibold disabled:opacity-50"
-                      >
-                        {saving ? 'Saving...' : 'Save Changes'}
-                      </button>
-                    </>
-                  )}
-                  <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
-                    Complete Profile
-                  </span>
-                  <span className="text-gray-500 text-sm">All Insights</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="max-w-7xl mx-auto px-6 py-8">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              
-              {/* Left Sidebar */}
-              <div className="lg:col-span-1 space-y-6">
-                
-                {/* Profile Card - LinkedIn Style */}
-                <div className="bg-white/60 backdrop-blur-lg rounded-xl shadow-lg border border-purple-200/40 overflow-hidden">
-                  {/* Cover Photo Background */}
-                  <div className="h-20 bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-700"></div>
-                  
-                  {/* Profile Content */}
-                  <div className="px-6 pb-6 relative">
-                    {/* Profile Image */}
-                    <div className="relative -mt-12 mb-4">
-                      <div className="relative inline-block">
-                        <div className="relative">
-                          {profileData.profileImage ? (
-                            <>
-                              <img
-                                src={profileData.profileImage}
-                                alt="Profile"
-                                className={`w-24 h-24 rounded-full object-cover border-4 border-white shadow-lg bg-white transition-opacity duration-200 ${
-                                  imageLoading ? 'opacity-75' : 'opacity-100'
-                                }`}
-                                onLoad={() => setImageLoading(false)}
-                              />
-                              {/* Loading spinner overlay */}
-                              {imageLoading && (
-                                <div className="absolute inset-0 flex items-center justify-center w-24 h-24 rounded-full bg-black bg-opacity-20">
-                                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
-                                </div>
-                              )}
-                            </>
-                          ) : (
-                            <div className="w-24 h-24 rounded-full bg-gray-200 border-4 border-white shadow-lg flex items-center justify-center">
-                              <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7-7h14a7 7 0 00-7-7z" />
-                              </svg>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* File input shown when editing */}
-                        {editMode && (
-                          <div className="absolute -bottom-2 -right-2">
-                            <label className={`cursor-pointer p-2 rounded-full shadow-lg transition-colors ${
-                              imageLoading 
-                                ? 'bg-gray-400 cursor-not-allowed' 
-                                : 'bg-blue-600 hover:bg-blue-700 text-white'
-                            }`}>
-                              {imageLoading ? (
-                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                              ) : (
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                                </svg>
-                              )}
-                              <input
-                                type="file"
-                                accept="image/*"
-                                onChange={handleImageChange}
-                                className="hidden"
-                                disabled={imageLoading}
-                              />
-                            </label>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Profile Info - LinkedIn Style */}
-                    <div className="text-left">
-                      {/* Name */}
-                      <h3 className="text-xl font-bold text-gray-900 mb-1 leading-tight">
-                        {profileData.firstName} {profileData.lastName}
-                      </h3>
-                      
-                      {/* Job Title/Profession */}
-                      <p className="text-gray-700 text-base font-medium mb-2 leading-snug">
-                        {profileData.jobTitle || 'Software Developer'}
-                      </p>
-                      
-                      {/* Location */}
-                      <div className="flex items-center gap-1.5 text-gray-500 text-sm mb-3">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                        <span>{profileData.location || profileData.address || 'Cairo, Egypt'}</span>
-                      </div>
-
-                      {/* Experience Level */}
-                      {profileData.experience && (
-                        <div className="flex items-center gap-1.5 text-gray-500 text-sm">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2-2v2m8 0H8m8 0v2a2 2 0 01-2 2H10a2 2 0 01-2-2V6m8 0H8m0 0v.01M8 6v.01" />
-                          </svg>
-                          <span>{profileData.experience} experience</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Additional file input options when editing */}
-                    {editMode && profileData.profileImage && (
-                      <div className="mt-4">
-                        <button
-                          type="button"
-                          onClick={handleRemoveProfileImage}
-                          className="px-3 py-1 text-xs bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
-                        >
-                          Remove Photo
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-
-                </div>
-
-                {/* Profile Completion */}
-                <div className="bg-white/80 backdrop-blur-md rounded-xl shadow-sm border border-white/30 p-6">
-                  <div className="text-center">
-                    <div className="relative w-24 h-24 mx-auto mb-4">
-                      <svg className="w-24 h-24 transform -rotate-90" viewBox="0 0 100 100">
-                        <circle
-                          cx="50"
-                          cy="50"
-                          r="40"
-                          stroke="#e5e7eb"
-                          strokeWidth="8"
-                          fill="none"
-                        />
-                        <circle
-                          cx="50"
-                          cy="50"
-                          r="40"
-                          stroke="#10b981"
-                          strokeWidth="8"
-                          fill="none"
-                          strokeDasharray={`${2 * Math.PI * 40}`}
-                          strokeDashoffset={`${2 * Math.PI * 40 * (1 - calculateProfileCompletion() / 100)}`}
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-lg font-bold text-gray-900">
-                          {calculateProfileCompletion()}%
-                        </span>
-                      </div>
-                    </div>
-                    <p className="text-sm font-medium text-gray-900">Profile Matched</p>
-                  </div>
-                </div>
-
-                {/* Contact Details */}
-                <div className="bg-white/80 backdrop-blur-md rounded-xl shadow-sm border border-white/30 p-6">
-                  <h4 className="text-lg font-semibold text-gray-900 mb-4">Contact Details</h4>
-                  
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3">
-                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                      </svg>
-                      <div>
-                        <p className="text-xs text-gray-500 uppercase tracking-wide">Email</p>
-                        <p className="text-sm text-gray-900">{profileData.email || 'Not provided'}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-3">
-                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                      </svg>
-                      <div>
-                        <p className="text-xs text-gray-500 uppercase tracking-wide">Phone</p>
-                        <p className="text-sm text-gray-900">{profileData.phone || 'Not provided'}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-3">
-                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      <div>
-                        <p className="text-xs text-gray-500 uppercase tracking-wide">Address</p>
-                        <p className="text-sm text-gray-900">{profileData.address || 'Not provided'}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-3">
-                      <svg className="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
-                      </svg>
-                      <div>
-                        <p className="text-xs text-gray-500 uppercase tracking-wide">LinkedIn</p>
-                        <p className="text-sm text-gray-900">{profileData.linkedIn || 'Not provided'}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Pending Applications */}
-                <div className="bg-white/80 backdrop-blur-md rounded-xl shadow-sm border border-white/30 p-6">
-                  <h4 className="text-lg font-semibold text-gray-900 mb-6">Pending Applications</h4>
-                  
-                  {applications && applications.length > 0 ? (
-                    <div className="grid grid-cols-2 gap-4">
-                      {applications.slice(0, 4).map((app, index) => {
-                        // Define company colors and progress based on status
-                        const getStatusInfo = (status) => {
-                          switch(status) {
-                            case 'pending':
-                              return { progress: 25, color: '#6B7280', label: 'Applied' };
-                            case 'reviewing':
-                              return { progress: 50, color: '#3B82F6', label: 'CV Opened' };
-                            case 'interview':
-                              return { progress: 75, color: '#3B82F6', label: 'Interview Stage' };
-                            case 'approved':
-                              return { progress: 100, color: '#10B981', label: 'Approved' };
-                            case 'rejected':
-                              return { progress: 100, color: '#EF4444', label: 'Rejected' };
-                            default:
-                              return { progress: 25, color: '#6B7280', label: 'Applied' };
-                          }
-                        };
-
-                        const statusInfo = getStatusInfo(app.status);
-                        const circumference = 2 * Math.PI * 36; // radius = 36
-                        const strokeDashoffset = circumference - (statusInfo.progress / 100) * circumference;
-
-                        // Company logo with proper styling
-                        const getCompanyLogo = (company) => {
-                          const logoComponents = {
-                            'Spotify': (
-                              <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                                <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
-                                  <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm4.5 14.424c-.185.302-.58.396-.882.211-2.42-1.477-5.462-1.812-9.04-.993-.38.087-.762-.147-.849-.527-.087-.38.147-.762.527-.849 3.909-.895 7.278-.511 10.019 1.146.302.185.396.58.211.882zm1.26-2.805c-.233.378-.728.496-1.106.263-2.77-1.703-6.991-2.195-10.26-1.201-.46.139-.951-.121-1.09-.581-.139-.46.121-.951.581-1.09 3.738-1.135 8.447-.595 11.612 1.373.378.233.496.728.263 1.106zm.108-2.92c-3.32-1.97-8.793-2.152-11.958-1.19-.551.168-1.133-.142-1.301-.693-.168-.551.142-1.133.693-1.301 3.626-1.1 9.768-.895 13.611 1.377.426.252.564.804.312 1.23-.252.426-.804.564-1.23.312z"/>
-                                </svg>
-                              </div>
-                            ),
-                            'Google': (
-                              <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-sm">
-                                <svg className="w-5 h-5" viewBox="0 0 24 24">
-                                  <path fill="#4285f4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                                  <path fill="#34a853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                                  <path fill="#fbbc05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                                  <path fill="#ea4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                                </svg>
-                              </div>
-                            ),
-                            'Microsoft': (
-                              <div className="w-8 h-8 bg-white rounded flex items-center justify-center shadow-sm">
-                                <div className="grid grid-cols-2 gap-0.5 w-4 h-4">
-                                  <div className="bg-red-500 w-full h-full rounded-sm"></div>
-                                  <div className="bg-green-500 w-full h-full rounded-sm"></div>
-                                  <div className="bg-blue-500 w-full h-full rounded-sm"></div>
-                                  <div className="bg-yellow-500 w-full h-full rounded-sm"></div>
-                                </div>
-                              </div>
-                            ),
-                            'Apple': (
-                              <div className="w-8 h-8 bg-gray-900 rounded-full flex items-center justify-center">
-                                <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
-                                  <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
-                                </svg>
-                              </div>
-                            ),
-                            'IBM': (
-                              <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center">
-                                <span className="text-white font-bold text-xs">IBM</span>
-                              </div>
-                            ),
-                            'Meta': (
-                              <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-                                <span className="text-white font-bold text-sm">M</span>
-                              </div>
-                            ),
-                            'Netflix': (
-                              <div className="w-8 h-8 bg-red-600 rounded flex items-center justify-center">
-                                <span className="text-white font-bold text-xs">N</span>
-                              </div>
-                            ),
-                            'Amazon': (
-                              <div className="w-8 h-8 bg-orange-500 rounded flex items-center justify-center">
-                                <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
-                                  <path d="M.045 18.02c.072-.116.194-.182.32-.165 3.982.562 8.02.562 12.002 0 .126-.017.248.049.32.165.071.115.062.26-.024.367-.372.462-.98.462-1.352 0-.085-.107-.094-.252-.023-.367z"/>
-                                </svg>
-                              </div>
-                            ),
-                            'Adidas': (
-                              <div className="w-8 h-8 bg-black rounded-full flex items-center justify-center">
-                                <div className="flex space-x-0.5">
-                                  <div className="w-1 h-3 bg-white transform rotate-12"></div>
-                                  <div className="w-1 h-4 bg-white transform rotate-12"></div>
-                                  <div className="w-1 h-3 bg-white transform rotate-12"></div>
-                                </div>
-                              </div>
-                            )
-                          };
-                          
-                          return logoComponents[company] || (
-                            <div className="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center">
-                              <span className="text-white font-bold text-sm">
-                                {company?.charAt(0)?.toUpperCase() || 'C'}
-                              </span>
-                            </div>
-                          );
-                        };
-
-                        return (
-                          <div key={app.id} className="text-center">
-                            {/* Circular Progress */}
-                            <div className="relative w-20 h-20 mx-auto mb-3">
-                              {/* Background Circle */}
-                              <svg className="w-20 h-20 transform -rotate-90" viewBox="0 0 80 80">
-                                <circle
-                                  cx="40"
-                                  cy="40"
-                                  r="36"
-                                  stroke="#E5E7EB"
-                                  strokeWidth="4"
-                                  fill="none"
-                                />
-                                {/* Progress Circle */}
-                                <circle
-                                  cx="40"
-                                  cy="40"
-                                  r="36"
-                                  stroke={statusInfo.color}
-                                  strokeWidth="4"
-                                  fill="none"
-                                  strokeDasharray={circumference}
-                                  strokeDashoffset={strokeDashoffset}
-                                  strokeLinecap="round"
-                                  className="transition-all duration-500 ease-in-out"
-                                />
-                              </svg>
-                              {/* Company Logo/Initial */}
-                              <div className="absolute inset-0 flex items-center justify-center">
-                                <div className="w-12 h-12 bg-white rounded-full shadow-sm flex items-center justify-center">
-                                  {getCompanyLogo(app.company)}
-                                </div>
-                              </div>
-                            </div>
-                            
-                            {/* Job Title */}
-                            <div className="mb-2">
-                              <p className="text-sm font-medium text-gray-900 leading-tight">
-                                {app.company || 'Company'}
-                              </p>
-                              <p className="text-xs text-gray-600 truncate">
-                                {app.jobTitle || 'Job Position'}
-                              </p>
-                            </div>
-                            
-                            {/* Status Badge */}
-                            <div>
-                              <span className={`px-2 py-1 text-xs rounded-md font-medium ${
-                                app.status === 'pending' 
-                                  ? 'bg-gray-100 text-gray-700' 
-                                  : app.status === 'reviewing'
-                                  ? 'bg-blue-100 text-blue-700'
-                                  : app.status === 'interview' 
-                                  ? 'bg-blue-100 text-blue-700'
-                                  : app.status === 'approved' 
-                                  ? 'bg-green-100 text-green-700'
-                                  : app.status === 'rejected'
-                                  ? 'bg-red-100 text-red-700'
-                                  : 'bg-gray-100 text-gray-700'
-                              }`}>
-                                {statusInfo.label}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8">
-                      <div className="w-16 h-16 bg-gray-100 rounded-full mx-auto mb-4 flex items-center justify-center">
-                        <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                      </div>
-                      <p className="text-gray-500 text-sm font-medium">No applications yet</p>
-                      <p className="text-gray-400 text-xs mt-1">Start applying to jobs to see your progress here</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Right Content Area */}
-              <div className="lg:col-span-2">
-                <div className="bg-white/80 backdrop-blur-md rounded-xl shadow-sm border border-white/30">
-                  
-                  {/* Tab Navigation */}
-                  <div className="border-b border-gray-200">
-                    <div className="px-6 py-4">
-                      <div className="flex space-x-8">
-                        <button className="px-4 py-2 text-sm font-medium text-green-600 border-b-2 border-green-600">
-                          Personal Details
-                        </button>
-                        <button className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">
-                          Career
-                        </button>
-                        <button className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">
-                          Skills & Interests
-                        </button>
-                        <button className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">
-                          Schedule Interview
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Content */}
-                  <div className="p-6">
-                    
-                    {/* Profile Photo Section */}
-                    <div className="mb-8 p-4 bg-gray-50 rounded-lg">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Profile Photo</h3>
-                      <div className="flex items-center gap-6">
-                        <div className="flex-shrink-0">
-                          {profileData.profileImage ? (
-                            <img
-                              src={profileData.profileImage}
-                              alt="Profile"
-                              className="w-20 h-20 rounded-full object-cover border-4 border-white shadow-lg cursor-pointer hover:shadow-xl transition-shadow"
-                              title="Click to view larger"
-                            />
-                          ) : (
-                            <div className="w-20 h-20 rounded-full bg-gray-200 border-4 border-white shadow-lg flex items-center justify-center">
-                              <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                              </svg>
-                            </div>
-                          )}
-                        </div>
-                        {editMode ? (
-                          <div className="flex flex-col gap-3">
-                            <label className="cursor-pointer bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors inline-block text-center">
-                              Upload New Photo
-                              <input
-                                type="file"
-                                accept="image/*"
-                                onChange={handleImageChange}
-                                className="hidden"
-                              />
-                            </label>
-                            {profileData.profileImage && (
-                              <button
-                                type="button"
-                                onClick={handleRemoveProfileImage}
-                                className="px-4 py-2 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
-                              >
-                                Remove Photo
-                              </button>
-                            )}
-                            <p className="text-xs text-gray-500">Recommended: Square image, at least 300x300 pixels</p>
-                          </div>
-                        ) : (
-                          <div>
-                            <p className="text-sm text-gray-600 mb-1">
-                              {profileData.profileImage ? 'Profile photo uploaded' : 'No profile photo'}
-                            </p>
-                            <p className="text-xs text-gray-500">Click "Edit Profile" to manage your photo</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Personal Details Grid */}
-                    <div className="grid grid-cols-2 gap-6 mb-8">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">First Name</label>
-                        {editMode ? (
-                          <input
-                            type="text"
-                            value={profileData.firstName}
-                            onChange={(e) => handleProfileUpdate('firstName', e.target.value)}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        ) : (
-                          <p className="text-gray-900">{profileData.firstName || 'Not provided'}</p>
-                        )}
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                        {editMode ? (
-                          <input
-                            type="email"
-                            value={profileData.email}
-                            onChange={(e) => handleProfileUpdate('email', e.target.value)}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        ) : (
-                          <p className="text-gray-900">{profileData.email || 'Not provided'}</p>
-                        )}
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Location</label>
-                        {editMode ? (
-                          <input
-                            type="text"
-                            value={profileData.location}
-                            onChange={(e) => handleProfileUpdate('location', e.target.value)}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="City, Country"
-                          />
-                        ) : (
-                          <p className="text-gray-900">{profileData.location || 'Not provided'}</p>
-                        )}
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Date of Birth</label>
-                        {editMode ? (
-                          <input
-                            type="date"
-                            value={profileData.dateOfBirth}
-                            onChange={(e) => handleProfileUpdate('dateOfBirth', e.target.value)}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        ) : (
-                          <p className="text-gray-900">{profileData.dateOfBirth || 'Not provided'}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Cover Letter */}
-                    <div className="mb-8">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Cover Letter</h3>
-                      {editMode ? (
-                        <textarea
-                          rows={6}
-                          value={profileData.coverLetter}
-                          onChange={(e) => handleProfileUpdate('coverLetter', e.target.value)}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="Write your cover letter here..."
-                        />
-                      ) : (
-                        <p className="text-gray-700 leading-relaxed text-sm">
-                          {profileData.coverLetter || 'No cover letter provided'}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Recent Experience */}
-                    <div className="mb-8">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Recent Experience</h3>
-                      {editMode ? (
-                        <div className="space-y-4 bg-gray-50 rounded-lg p-4">
-                          <input
-                            type="text"
-                            value={profileData.recentExperience.position}
-                            onChange={(e) => handleNestedUpdate('recentExperience', 'position', e.target.value)}
-                            placeholder="Position"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                          <input
-                            type="text"
-                            value={profileData.recentExperience.company}
-                            onChange={(e) => handleNestedUpdate('recentExperience', 'company', e.target.value)}
-                            placeholder="Company"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                          <input
-                            type="text"
-                            value={profileData.recentExperience.duration}
-                            onChange={(e) => handleNestedUpdate('recentExperience', 'duration', e.target.value)}
-                            placeholder="Duration (e.g., Jan 2022 - Present)"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                      ) : (
-                        <div className="bg-gray-50 rounded-lg p-4">
-                          <h4 className="font-medium text-gray-900 text-sm">
-                            {profileData.recentExperience.position || 'Position not provided'}
-                          </h4>
-                          <p className="text-gray-600 text-sm mb-1">
-                            {profileData.recentExperience.company || 'Company not provided'}
-                          </p>
-                          <p className="text-gray-500 text-xs">
-                            {profileData.recentExperience.duration || 'Duration not provided'}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Two Column Layout for Education and Skills */}
-                    <div className="grid grid-cols-2 gap-8">
-                      
-                      {/* Education */}
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900 mb-3">Education</h3>
-                        {editMode ? (
-                          <div className="space-y-4 bg-gray-50 rounded-lg p-4">
-                            <input
-                              type="text"
-                              value={profileData.education.degree}
-                              onChange={(e) => handleNestedUpdate('education', 'degree', e.target.value)}
-                              placeholder="Degree"
-                              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                            <input
-                              type="text"
-                              value={profileData.education.institution}
-                              onChange={(e) => handleNestedUpdate('education', 'institution', e.target.value)}
-                              placeholder="Institution"
-                              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                            <input
-                              type="text"
-                              value={profileData.education.year}
-                              onChange={(e) => handleNestedUpdate('education', 'year', e.target.value)}
-                              placeholder="Year"
-                              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                          </div>
-                        ) : (
-                          <div className="bg-gray-50 rounded-lg p-4">
-                            <h4 className="font-medium text-gray-900 text-sm">
-                              {profileData.education.degree || 'Degree not provided'}
-                            </h4>
-                            <p className="text-gray-600 text-sm mb-1">
-                              {profileData.education.institution || 'Institution not provided'}
-                            </p>
-                            <p className="text-gray-500 text-xs">
-                              {profileData.education.year || 'Year not provided'}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Skills */}
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900 mb-3">Skills</h3>
-                        {editMode && (
-                          <div className="flex gap-2 mb-3">
-                            <input
-                              type="text"
-                              value={newSkill}
-                              onChange={(e) => setNewSkill(e.target.value)}
-                              onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleSkillAdd())}
-                              placeholder="Add a skill"
-                              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                            />
-                            <button
-                              type="button"
-                              onClick={handleSkillAdd}
-                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-semibold"
-                            >
-                              Add
-                            </button>
-                          </div>
-                        )}
-                        <div className="flex flex-wrap gap-2">
-                          {profileData.skills.length > 0 ? (
-                            profileData.skills.map((skill, index) => (
-                              <span
-                                key={index}
-                                className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium flex items-center gap-2"
-                              >
-                                {skill}
-                                {editMode && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSkillRemove(skill)}
-                                    className="text-red-500 hover:text-red-700"
-                                  >
-                                    ×
-                                  </button>
-                                )}
-                              </span>
-                            ))
-                          ) : (
-                            <p className="text-gray-500 text-sm">No skills added</p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Resume Section */}
-                    <div className="mt-8">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Resume</h3>
-                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                        <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                        </svg>
-                        <p className="text-gray-600 text-sm mb-2">Upload your resume</p>
-                        <button className="text-blue-600 text-sm hover:text-blue-700 font-semibold">
-                          Click to browse files
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* New Multi-step Application Form */}
-      {showApplicationForm && selectedJob && (
-        <ApplicationForm
-          job={selectedJob}
-          onSubmit={handleApplicationSubmit}
-          onCancel={() => setShowApplicationForm(false)}
-        />
-      )}
-
-      {/* Easy Apply Form */}
-      {showEasyApplyForm && selectedJob && (
-        <EasyApplyForm
-          job={selectedJob}
-          user={user}
-          onSubmit={handleEasyApplySubmit}
-          onCancel={() => setShowEasyApplyForm(false)}
-        />
-      )}
+        )}
+      </div>
     </div>
+    </div>
+
+    {/* Application Forms */}
+    {showApplicationForm && selectedJob && (
+      <ApplicationForm
+        job={selectedJob}
+        onSubmit={handleApplicationSubmit}
+        onCancel={handleCancelApplication}
+      />
+    )}
+
+    {showEasyApplyForm && selectedJob && (
+      <EasyApplyForm
+        job={selectedJob}
+        user={user}
+        onSubmit={handleApplicationSubmit}
+        onCancel={handleCancelApplication}
+      />
+    )}
+    </>
   );
 };
 

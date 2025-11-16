@@ -1,6 +1,11 @@
 // API Configuration for JSON Server
+// Use window.location.hostname to automatically work on both localhost and network
+const API_HOST = window.location.hostname === 'localhost' 
+  ? 'localhost' 
+  : window.location.hostname;
+
 export const apiConfig = {
-  baseURL: 'http://localhost:5000',
+  baseURL: `http://${API_HOST}:5000`,
   timeout: 10000,
   retries: 3
 };

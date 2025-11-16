@@ -41,11 +41,11 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-indigo-900 flex items-center justify-center p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-indigo-900 flex items-center justify-center p-4 md:p-6">
       {/* Main Container Card */}
-      <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl overflow-hidden max-w-5xl w-full flex gap-8 p-8">
+      <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl overflow-hidden max-w-5xl w-full flex flex-col lg:flex-row gap-6 lg:gap-8 p-5 md:p-8">
         {/* Left Side - Visual/Branding Container */}
-        <div className="w-1/2 bg-gradient-to-br from-purple-600 via-purple-700 to-indigo-800 rounded-xl flex flex-col justify-center items-center p-12 relative overflow-hidden">
+        <div className="w-full lg:w-1/2 bg-gradient-to-br from-purple-600 via-purple-700 to-indigo-800 rounded-xl flex flex-col justify-center items-center p-8 md:p-12 relative overflow-hidden min-h-[260px]">
         {/* AI Generated Background Images */}
         <div className="absolute inset-0">
           {/* Main hero image - AI generated style professional/tech scene */}
@@ -114,8 +114,8 @@ const Login = () => {
       </div>
 
       {/* Right Side - Login Form */}
-      <div className="w-1/2 flex items-center justify-center">
-        <div className="max-w-md w-full">
+      <div className="w-full lg:w-1/2 flex items-center justify-center">
+        <div className="w-full">
           {/* Back button */}
           <div className="mb-8">
             <Link to="/" className="inline-flex items-center text-gray-400 hover:text-white transition-colors">
@@ -160,7 +160,7 @@ const Login = () => {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <input
                   id="email"
@@ -187,14 +187,14 @@ const Login = () => {
               </div>
             </div>
 
-            <div className="flex items-center">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-0">
               <input
                 id="remember"
                 name="remember"
                 type="checkbox"
                 className="h-4 w-4 text-purple-600 bg-white/10 border-white/20 rounded focus:ring-purple-500"
               />
-              <label htmlFor="remember" className="ml-2 text-sm text-gray-300">
+              <label htmlFor="remember" className="sm:ml-2 text-sm text-gray-300">
                 I agree to the{' '}
                 <a href="#" className="text-purple-400 hover:text-purple-300 underline">
                   Terms & Conditions

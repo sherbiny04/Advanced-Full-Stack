@@ -1,8 +1,23 @@
-const API_BASE_URL = 'http://localhost:5000';
+// Dynamic API URL that works on both localhost and network
+// When on phone (network access), use proxy through Vite server
+// When on localhost, can use direct connection or proxy
+const getAPIBaseURL = () => {
+  const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+  
+  // Always use proxy when accessing from network (phone)
+  // This way the phone talks to Vite (port 3000) which proxies to json-server (port 5000)
+  if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+    return '/api'; // Use Vite proxy
+  }
+  
+  // On localhost, connect directly
+  return 'http://localhost:5000';
+};
 
 // Helper function for fetch requests
 const fetchAPI = async (endpoint, options = {}) => {
   try {
+    const API_BASE_URL = getAPIBaseURL();
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       headers: {
         'Content-Type': 'application/json',

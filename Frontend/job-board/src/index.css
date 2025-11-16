@@ -207,7 +207,8 @@ body {
 }
 
 .animate-count-up {
-  animation: countUp 0.8s ease-out forwards, glow 2s ease-in-out infinite;
+  /* One-time smooth entrance for numbers; removed infinite glow */
+  animation: countUp 1s ease-out forwards;
 }
 
 .stats-number {
@@ -357,6 +358,64 @@ input[type="range"]::-ms-thumb:hover {
   transform: translateY(-3px) scale(1.03);
 }
 
+/* Dashboard Dark Theme Overrides */
+.dashboard-root[data-theme='dark'] {
+  background-color: #020617;
+  color: #e2e8f0;
+}
+
+.dashboard-root[data-theme='dark'] .bg-white,
+.dashboard-root[data-theme='dark'] .bg-gray-50,
+.dashboard-root[data-theme='dark'] .bg-gray-100,
+.dashboard-root[data-theme='dark'] .bg-gray-200 {
+  background-color: rgba(15, 23, 42, 0.85) !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 20px 45px rgba(2, 6, 23, 0.65);
+}
+
+.dashboard-root[data-theme='dark'] .bg-gray-50 {
+  background-color: rgba(3, 7, 18, 0.7) !important;
+}
+
+.dashboard-root[data-theme='dark'] .text-gray-900,
+.dashboard-root[data-theme='dark'] .text-gray-800,
+.dashboard-root[data-theme='dark'] .text-gray-700 {
+  color: #f8fafc !important;
+}
+
+.dashboard-root[data-theme='dark'] .text-gray-600,
+.dashboard-root[data-theme='dark'] .text-gray-500 {
+  color: #cbd5f5 !important;
+}
+
+.dashboard-root[data-theme='dark'] .text-gray-400,
+.dashboard-root[data-theme='dark'] .text-gray-300 {
+  color: #94a3b8 !important;
+}
+
+.dashboard-root[data-theme='dark'] .border-gray-200,
+.dashboard-root[data-theme='dark'] .border-gray-100,
+.dashboard-root[data-theme='dark'] .border-gray-300,
+.dashboard-root[data-theme='dark'] .divide-gray-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(148, 163, 184, 0.35) !important;
+}
+
+.dashboard-root[data-theme='dark'] .hover\:bg-gray-50:hover,
+.dashboard-root[data-theme='dark'] .hover\:bg-gray-100:hover,
+.dashboard-root[data-theme='dark'] .hover\:bg-gray-200:hover {
+  background-color: rgba(30, 41, 59, 0.8) !important;
+}
+
+.dashboard-root[data-theme='dark'] .bg-purple-50 {
+  background-color: rgba(76, 29, 149, 0.3) !important;
+}
+
+.dashboard-root[data-theme='dark'] .text-gray-500::placeholder,
+.dashboard-root[data-theme='dark'] .placeholder\:text-gray-400::placeholder {
+  color: #94a3b8 !important;
+}
+
 /* Custom Animation Keyframes for Login/Register */
 @keyframes spin-slow {
   from {
@@ -445,3 +504,33 @@ input[type="range"]::-ms-thumb:hover {
 .auth-input:focus + .input-icon {
   color: rgba(139, 92, 246, 1);
 }
+
+/* Gradient Border Animations */
+@keyframes gradient-x {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes gradient-y {
+  0%, 100% {
+    background-position: 50% 0%;
+  }
+  50% {
+    background-position: 50% 100%;
+  }
+}
+
+.animate-gradient-x {
+  background-size: 200% 100%;
+  animation: gradient-x 3s ease infinite;
+}
+
+.animate-gradient-y {
+  background-size: 100% 200%;
+  animation: gradient-y 3s ease infinite;
+}
+

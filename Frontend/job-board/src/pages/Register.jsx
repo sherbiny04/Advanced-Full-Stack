@@ -104,11 +104,11 @@ const Register = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-indigo-900 flex items-center justify-center p-6 pt-20">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-indigo-900 flex items-center justify-center px-4 py-6 md:px-6 lg:px-8 pt-24 md:pt-20">
       {/* Main Container Card */}
-      <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl overflow-hidden max-w-5xl w-full flex gap-8 p-8">
+      <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl overflow-hidden max-w-5xl w-full flex flex-col lg:flex-row gap-6 lg:gap-8 p-5 md:p-8">
         {/* Left Side - Visual/Branding Container */}
-        <div className="w-1/2 bg-gradient-to-br from-purple-600 via-purple-700 to-indigo-800 rounded-xl flex flex-col justify-center items-center p-12 relative overflow-hidden">
+        <div className="order-2 lg:order-1 w-full lg:w-1/2 bg-gradient-to-br from-purple-600 via-purple-700 to-indigo-800 rounded-xl flex flex-col justify-center items-center p-8 md:p-12 relative overflow-hidden min-h-[260px]">
         {/* AI Generated Background Images */}
         <div className="absolute inset-0">
           {/* Main hero image - AI generated style professional/tech scene */}
@@ -177,8 +177,8 @@ const Register = () => {
       </div>
 
       {/* Right Side - Registration Form */}
-      <div className="w-1/2 flex items-center justify-center overflow-y-auto">
-        <div className="max-w-md w-full">
+      <div className="order-1 lg:order-2 w-full lg:w-1/2 flex items-center justify-center">
+        <div className="w-full max-w-md">
           {/* Back button */}
           <div className="mb-4">
             <Link to="/" className="inline-flex items-center text-gray-400 hover:text-white transition-colors text-sm">
@@ -217,7 +217,7 @@ const Register = () => {
             {/* Role Selection */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-3">I am a</label>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <button
                   type="button"
                   onClick={() => setFormData({ ...formData, role: 'seeker' })}
@@ -254,7 +254,7 @@ const Register = () => {
             </div>
 
             {/* Name and Email Row */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <input
                 id="name"
                 name="name"
@@ -293,7 +293,7 @@ const Register = () => {
 
             {/* Additional fields for job seekers */}
             {formData.role === 'seeker' && (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <input
                   id="city"
                   name="city"
@@ -331,7 +331,7 @@ const Register = () => {
             )}
 
             {/* Password Fields */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <input
                 id="password"
                 name="password"
@@ -392,7 +392,7 @@ const Register = () => {
           {/* Social Login */}
           <div className="mt-8">
             <p className="text-center text-gray-400 text-sm mb-4">Or register with</p>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <button className="flex items-center justify-center px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg text-gray-300 hover:bg-white/20 transition-colors">
                 <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
                   <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>

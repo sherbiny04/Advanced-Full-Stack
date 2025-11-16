@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Backend backup
+.backup
+db.json
+start-dev.ps1
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -1,4 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { useTheme } from './hooks/useTheme';
 import { AuthProvider } from './context/AuthContext';
 import { JobProvider } from './context/JobContext';
 import Navbar from './components/layout/Navbar';
@@ -17,9 +18,12 @@ function AppContent() {
   const location = useLocation();
   const isDashboard = location.pathname.includes('/dashboard');
   const isAuthPage = location.pathname === '/login' || location.pathname === '/register';
+  const { isDarkMode } = useTheme();
 
   return (
-    <div className="min-h-screen">
+    <div className={`min-h-screen transition-colors duration-300 ${
+      isDarkMode ? 'bg-slate-950 text-gray-100' : 'bg-white text-gray-900'
+    }`}>
       {!isAuthPage && <Navbar />}
       <main>
         <Routes>
